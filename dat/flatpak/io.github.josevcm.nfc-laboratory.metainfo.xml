@@ -39,27 +39,27 @@
 
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot0.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot0.png</image>
       <caption>Main signal view showing NFC communication</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot1.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot1.png</image>
       <caption>Signal analysis with protocol markers</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot2.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot2.png</image>
       <caption>NFC wave detail view for contactless cards</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot3.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot3.png</image>
       <caption>ISO7816 wave detail view for contact cards</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot4.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot4.png</image>
       <caption>Radio spectrum analyzer view</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.0/doc/img/nfc-lab-screenshot5.png</image>
+      <image>https://raw.githubusercontent.com/josevcm/nfc-laboratory/3.4.2/doc/img/nfc-lab-screenshot5.png</image>
       <caption>Protocol detail view with filtering capabilities</caption>
     </screenshot>
   </screenshots>
@@ -73,9 +73,20 @@
   </developer>
 
   <releases>
+    <release version="3.4.2" date="2025-11-28">
+      <description>
+        <p>Fixed resampled buffer size to avoid crash when resampled data equals incoming data.</p>
+        <p>Deploy nfc-rx tool with installers.</p>
+      </description>
+    </release>
+    <release version="3.4.1" date="2025-11-24">
+      <description>
+        <p>Fixed ATR parser infinite-loop in ISO7816 decoder.</p>
+      </description>
+    </release>
     <release version="3.4.0" date="2025-11-21">
       <description>
-        <p>Latest stable release with improvements and bug fixes.</p>
+        <p>Fixed DSLogic capture and FFT processing. Added support for MSI2500-based devices.</p>
       </description>
     </release>
   </releases>
