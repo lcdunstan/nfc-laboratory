@@ -11,3 +11,4 @@ src/nfc-app/app-qt/src/main/cpp/QtConfig.h
 .flatpak-builder/
 build-dir/
 repo/
+CLAUDE.md
