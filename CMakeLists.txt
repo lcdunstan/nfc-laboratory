@@ -111,6 +111,62 @@ else ()
 endif()
 
 #-------------------------------------------------------------------------------
+# fetch and build protobuf
+#-------------------------------------------------------------------------------
+include(FetchContent)
+
+set(FETCHCONTENT_QUIET                 OFF CACHE BOOL "" FORCE)
+set(FETCHCONTENT_UPDATES_DISCONNECTED  ON  CACHE BOOL "" FORCE)
+
+set(protobuf_BUILD_TESTS               OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_EXAMPLES            OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_PROTOC_BINARIES     ON  CACHE BOOL "" FORCE)
+set(protobuf_BUILD_SHARED_LIBS         OFF CACHE BOOL "" FORCE)
+set(protobuf_INSTALL                   OFF CACHE BOOL "" FORCE)
+
+set(CARES_BUILD_TOOLS                  OFF CACHE BOOL "" FORCE)
+set(CARES_BUILD_TESTS                  OFF CACHE BOOL "" FORCE)
+set(CARES_SHARED                       OFF CACHE BOOL "" FORCE)
+set(CARES_STATIC                       ON  CACHE BOOL "" FORCE)
+
+set(RE2_BUILD_TESTING                  OFF CACHE BOOL "" FORCE)
+
+set(ABSL_BUILD_TESTING                 OFF CACHE BOOL "" FORCE)
+set(ABSL_ENABLE_INSTALL                OFF CACHE BOOL "" FORCE)
+
+set(gRPC_BUILD_TESTS                   OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_CODEGEN                 ON  CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_CPP_PLUGIN         ON  CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_CSHARP_PLUGIN      OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_NODE_PLUGIN        OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_OBJECTIVE_C_PLUGIN OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_PHP_PLUGIN         OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_PYTHON_PLUGIN      OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_GRPC_RUBY_PLUGIN        OFF CACHE BOOL "" FORCE)
+set(gRPC_ENABLE_OPENTELEMETRY          OFF CACHE BOOL "" FORCE)
+set(gRPC_BUILD_BENCHMARKS              OFF CACHE BOOL "" FORCE)
+set(gRPC_USE_PROTO_LITE                OFF CACHE BOOL "" FORCE)
+set(gRPC_INSTALL                       OFF CACHE BOOL "" FORCE)
+
+set(gRPC_PROTOBUF_PROVIDER             "module" CACHE STRING "" FORCE)
+set(gRPC_ABSL_PROVIDER                 "module" CACHE STRING "" FORCE)
+set(gRPC_RE2_PROVIDER                  "module" CACHE STRING "" FORCE)
+set(gRPC_CARES_PROVIDER                "module" CACHE STRING "" FORCE)
+set(gRPC_ZLIB_PROVIDER                 "module" CACHE STRING "" FORCE)
+set(gRPC_SSL_PROVIDER                  "module" CACHE STRING "" FORCE)
+
+FetchContent_Declare(
+        grpc
+        GIT_REPOSITORY      https://github.com/grpc/grpc.git
+        GIT_TAG             v1.68.1
+        GIT_SHALLOW         TRUE
+        OVERRIDE_FIND_PACKAGE
+)
+
+FetchContent_MakeAvailable(grpc)
+FetchContent_MakeAvailable(protobuf)
+
+#-------------------------------------------------------------------------------
 # configure files
 #-------------------------------------------------------------------------------
 
@@ -128,26 +184,5 @@ endif (WIN32)
 #-------------------------------------------------------------------------------
 # configure sources
 #-------------------------------------------------------------------------------
-#-------------------------------------------------------------------------------
-# fetch and build protobuf
-#-------------------------------------------------------------------------------
-include(FetchContent)
-
-set(protobuf_BUILD_TESTS          OFF CACHE BOOL "" FORCE)
-set(protobuf_BUILD_EXAMPLES       OFF CACHE BOOL "" FORCE)
-set(protobuf_BUILD_PROTOC_BINARIES ON  CACHE BOOL "" FORCE)
-set(protobuf_BUILD_SHARED_LIBS    OFF CACHE BOOL "" FORCE)
-set(protobuf_INSTALL              OFF CACHE BOOL "" FORCE)
-set(ABSL_PROPAGATE_CXX_STD        ON  CACHE BOOL "" FORCE)
-
-FetchContent_Declare(
-  protobuf
-  GIT_REPOSITORY https://github.com/protocolbuffers/protobuf.git
-  GIT_TAG        v5.29.3
-  GIT_SHALLOW    TRUE
-)
-
-FetchContent_MakeAvailable(protobuf)
-
 add_subdirectory(src)
 
