@@ -153,18 +153,17 @@ set(gRPC_ABSL_PROVIDER                 "module" CACHE STRING "" FORCE)
 set(gRPC_RE2_PROVIDER                  "module" CACHE STRING "" FORCE)
 set(gRPC_CARES_PROVIDER                "module" CACHE STRING "" FORCE)
 set(gRPC_ZLIB_PROVIDER                 "module" CACHE STRING "" FORCE)
-set(gRPC_SSL_PROVIDER                  "module" CACHE STRING "" FORCE)
+set(gRPC_SSL_PROVIDER                  "none"   CACHE STRING "" FORCE)
 
 FetchContent_Declare(
         grpc
         GIT_REPOSITORY      https://github.com/grpc/grpc.git
-        GIT_TAG             v1.68.1
+        GIT_TAG             v1.80.0
         GIT_SHALLOW         TRUE
         OVERRIDE_FIND_PACKAGE
 )
 
 FetchContent_MakeAvailable(grpc)
-FetchContent_MakeAvailable(protobuf)
 
 #-------------------------------------------------------------------------------
 # configure files
