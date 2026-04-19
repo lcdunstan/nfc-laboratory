@@ -18,6 +18,5 @@ add_library(ed25519 STATIC
 target_compile_options(ed25519 PRIVATE -DED25519_NO_SEED)
 
 target_include_directories(ed25519 PUBLIC ${PUBLIC_SOURCE_DIR})
-target_include_directories(ed25519 PRIVATE ${LIBUSB_INCLUDE_DIR})
 
 target_link_libraries(ed25519)

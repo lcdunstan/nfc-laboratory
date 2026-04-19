@@ -13,6 +13,6 @@ add_library(rtlsdr STATIC
 )
 
 target_include_directories(rtlsdr PUBLIC ${PUBLIC_INCLUDE_DIR})
-target_include_directories(rtlsdr PRIVATE ${LIBUSB_INCLUDE_DIR})
+target_include_directories(rtlsdr PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
-target_link_libraries(rtlsdr ${LIBUSB_LIBRARY})
+target_link_libraries(rtlsdr ${LIBUSB_LIBRARIES})
