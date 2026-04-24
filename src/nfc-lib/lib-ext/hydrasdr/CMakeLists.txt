@@ -14,5 +14,6 @@ if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
 endif ()
 
 target_include_directories(hydrasdr PUBLIC ${PUBLIC_INCLUDE_DIR})
+target_include_directories(hydrasdr PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
-target_link_libraries(hydrasdr ${LIBUSB_LIBRARY})
+target_link_libraries(hydrasdr ${LIBUSB_LIBRARIES})
