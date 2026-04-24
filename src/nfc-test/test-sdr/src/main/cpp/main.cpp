@@ -157,8 +157,8 @@ bool readSignal(const std::string &path, std::list<lab::RawFrame> &list)
 
    std::list<lab::RawFrame> frames;
 
-   unsigned int channelCount = std::get<unsigned int>(source.get(hw::SignalDevice::PARAM_CHANNEL_COUNT));
-   unsigned int sampleRate = std::get<unsigned int>(source.get(hw::SignalDevice::PARAM_SAMPLE_RATE));
+   unsigned int channelCount = source.get<unsigned int>(hw::SignalDevice::PARAM_CHANNEL_COUNT);
+   unsigned int sampleRate = source.get<unsigned int>(hw::SignalDevice::PARAM_SAMPLE_RATE);
 
    while (!source.isEof())
    {

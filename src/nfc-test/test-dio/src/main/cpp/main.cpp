@@ -90,8 +90,8 @@ int main(int argc, char *argv[])
 
          std::string fileName = ::fileName("logic");
          unsigned int sampleSize = 8;
-         unsigned int sampleRate = std::get<unsigned int>(device.get(hw::logic::DSLogicDevice::PARAM_SAMPLE_RATE));
-         unsigned int validChannels = std::get<unsigned int>(device.get(hw::logic::DSLogicDevice::PARAM_CHANNEL_VALID));
+         unsigned int sampleRate = device.get<unsigned int>(hw::logic::DSLogicDevice::PARAM_SAMPLE_RATE);
+         unsigned int validChannels = device.get<unsigned int>(hw::logic::DSLogicDevice::PARAM_CHANNEL_VALID);
 
          hw::RecordDevice storage(fileName);
 
