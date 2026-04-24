@@ -176,7 +176,8 @@ jobs:
       - name: Resolve runtime dependencies (ldd)
         shell: msys2 {0}
         run: |
-          APP=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")/nfc-lab.exe
+          INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
+          APP="$INSTALLER_DATA/nfc-lab.exe"
 
           echo "🔍 Detecting dependencies..."
           ldd "$APP" > deps.txt
@@ -186,7 +187,7 @@ jobs:
           while read line; do
             dll=$(echo "$line" | awk '{print $3}')
             if [[ -f "$dll" ]]; then
-              cp -v "$dll" "${{ steps.strings-windows.outputs.installer-data-dir }}/"
+              cp -vu "$dll" "$INSTALLER_DATA/"
             fi
           done < deps.txt
 
