@@ -187,6 +187,7 @@ jobs:
             if [[ -f "$dll" ]]; then
               cp -v "$dll" "${{ steps.strings-windows.outputs.installer-data-dir }}/"
             fi
+          done < deps.txt
 
       - name: Copy external DLLs
         shell: powershell
