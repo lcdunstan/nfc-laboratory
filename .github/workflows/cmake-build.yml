@@ -117,14 +117,13 @@ jobs:
           echo "installer-meta-dir=${{ github.workspace }}/build/installer/meta" >> "$GITHUB_OUTPUT"
           echo "cpu-count=4" >> "$GITHUB_OUTPUT"
 
-      - name: 'Cache dependencies'
-        id: cache-dependencies
+      - name: 'Cache pacman packages'
         uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-qt-dependencies
-          path: |
-            ${{ github.workspace }}/qt
-            ${{ github.workspace }}/tools
+          path: C:\msys64\var\cache\pacman\pkg
+          key: msys2-${{ runner.os }}-${{ hashFiles('.github/workflows/*') }}
+          restore-keys: |
+            msys2-${{ runner.os }}-
 
       - name: 'Setup MSYS2'
         uses: msys2/setup-msys2@v2
