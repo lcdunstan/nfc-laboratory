@@ -214,9 +214,10 @@ jobs:
             -DestinationPath ${{ github.workspace }}/nfc-lab-${{ steps.strings-windows.outputs.build-version }}-x86_64-portable.zip
 
       - name: Create NSIS installer
-        shell: powershell
+        shell: msys2 {0}
         run: |
-          C:\msys64\ucrt64\bin\makensis.exe ${{ steps.strings-windows.outputs.installer-meta-dir }}/script.nsi
+          INSTALLER_META=$(cygpath "${{ steps.strings-windows.outputs.installer-meta-dir }}")
+          /ucrt64/bin/makensis.exe "$INSTALLER_META/script.nsi"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
