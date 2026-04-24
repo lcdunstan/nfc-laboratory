@@ -186,7 +186,7 @@ jobs:
           echo "📦 Copying required DLLs..."
           while read line; do
             dll=$(echo "$line" | awk '{print $3}')
-            if [[ -f "$dll" && "$dll" != "$INSTALLER_DATA"* ]]; then
+            if [[ -f "$dll" && "$dll" != "$INSTALLER_DATA"* && "$dll" != /c/Windows/* ]]; then
               cp -v "$dll" "$INSTALLER_DATA/"
             fi
           done < deps.txt
