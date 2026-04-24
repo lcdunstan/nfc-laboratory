@@ -164,18 +164,19 @@ jobs:
       - name: Deploy Qt
         shell: msys2 {0}
         run: |
+          INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
           /ucrt64/bin/windeployqt \
           --verbose 1 \
           --compiler-runtime \
           --no-translations \
           --no-system-d3d-compiler \
           --no-opengl-sw \
-          ${{ steps.strings-windows.outputs.installer-data-dir }}/nfc-lab.exe
+          "$INSTALLER_DATA/nfc-lab.exe"
 
       - name: Resolve runtime dependencies (ldd)
         shell: msys2 {0}
         run: |
-          APP="${{ steps.strings-windows.outputs.installer-data-dir }}/nfc-lab.exe"
+          APP=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")/nfc-lab.exe
 
           echo "🔍 Detecting dependencies..."
           ldd "$APP" > deps.txt
