@@ -10,12 +10,13 @@ add_library(mirisdr STATIC
 #add_library(getopt STATIC src/main/c/getopt/getopt.c)
 
 target_include_directories(mirisdr PUBLIC ${PUBLIC_INCLUDE_DIR})
+target_include_directories(mirisdr PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
 target_compile_options(mirisdr PRIVATE -Dmirisdr_STATIC)
 target_compile_options(mirisdr PRIVATE -DSOVERSION="${MAJOR_VERSION}")
 target_compile_options(mirisdr PRIVATE -DVERSION="${LIBVER}")
 
-target_link_libraries(mirisdr ${LIBUSB_LIBRARY})
+target_link_libraries(mirisdr ${LIBUSB_LIBRARIES})
 
 ########################################################################
 # Build utility
@@ -24,6 +25,6 @@ target_link_libraries(mirisdr ${LIBUSB_LIBRARY})
 #add_executable(miri_sdr src/main/c/miri_sdr.c)
 #add_executable(miri_fm src/main/c/miri_fm.c)
 
-#target_link_libraries(miri_sdr mirisdr getopt ${LIBUSB_LIBRARY})
-#target_link_libraries(miri_fm mirisdr getopt ${LIBUSB_LIBRARY})
+#target_link_libraries(miri_sdr mirisdr getopt ${LIBUSB_LIBRARIES})
+#target_link_libraries(miri_fm mirisdr getopt ${LIBUSB_LIBRARIES})
 

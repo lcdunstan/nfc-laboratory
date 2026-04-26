@@ -266,6 +266,11 @@ works with others.
   very clean signals with good antenna. This device is supported only as a reference to experiment with it, I not
   recommend using it if you want to obtain good results.
 
+> **Antenna note:** The most challenging part of the whole setup is obtaining a suitable antenna correctly tuned for
+> 13.56 MHz. A poorly matched or mistuned antenna will result in weak signals, missed frames and unreliable decoding
+> regardless of the SDR used. The recommended approach is to reuse antennas salvaged from commercial NFC readers, as
+> these are already designed and tuned for 13.56 MHz and provide excellent coupling with NFC cards and tags.
+
 Receivers tested, from left to right:
 
 ![Devices](doc/img/nfc-lab-devices1.png "Devices")
@@ -281,6 +286,33 @@ AirSpy with custom antenna and ARC122U reader:
 HydraSDR RFOne with custom antenna made from RC522 reader PCB:
 
 ![Devices](doc/img/nfc-lab-devices8.png "Devices")
+
+### Antenna using a commercial RC522 PCB
+
+An inexpensive and very effective antenna can be built by repurposing a standard MFRC522-based reader board
+(commonly sold as RC522 modules). These boards include an antenna loop already designed and tuned for 13.56 MHz,
+along with a matching capacitor network, making them ideal for this purpose.
+
+#### Modification
+
+1. **Remove the MFRC522 chip** from the PCB. The chip is not needed; only the antenna and its matching network
+   are used. It can be desoldered or simply left in place without connections if removal is not practical.
+
+2. **Identify the antenna feed points** on the PCB. On most RC522 boards these correspond to the pads
+   previously connected to the TX1 and VMID pins of the chip.
+
+![RC522 antenna mod](doc/img/rc522-antenna-mod2.png)
+
+3. **Connect the SDR receiver** to the antenna circuit:
+   - SDR antenna input (centre conductor) → **TX1** or **TX2** pad on the RC522 PCB
+   - SDR ground → **GND / VMID** pad on the RC522 PCB
+
+![RC522 antenna mod](doc/img/rc522-antenna-mod1.png)
+
+#### Result
+
+This modification gives a compact, well-matched antenna that couples efficiently with NFC cards and tags placed
+directly on the board surface. The photo above shows this setup used with a HydraSDR RFOne receiver.
 
 ### Driver Setup for RTL-SDR
 
@@ -316,8 +348,8 @@ biasTee=1
 ```
 ### Direct Sampling mode
 
-Another way to avoid using harmonics is activate direct sampling mode and tune to the carrier frequency of 13.56Mhz in those devices that allow it. 
-Currently it is only available for RTLSDR thanks to the contribution of [Vincent Långström](https://github.com/vinicentus). You can use direct 
+Another way to avoid using harmonics is activating direct sampling mode and tune to the carrier frequency of 13.56Mhz in those devices that allow it. 
+Currently, it is only available for RTLSDR thanks to the contribution of [Vincent Långström](https://github.com/vinicentus). You can use direct 
 sampling on either the Q- or I-branch. The Q-branch is preferred due to better results, set the Q-branch with directSampling=2 and the I-branch 
 with directSampling=1, directSampling=0 turns off direct sampling.
 
@@ -554,64 +586,86 @@ Contains the following components:
 
 All can be compiled with mingw-g64, a minimum version is required to support C++17, recommended 11.0 or higher.
 
-### Prerequisites
+### Manual build for Windows (MSYS2)
 
-- CMake version 3.16 or higher
-  - `winget install -e --id=Kitware.CMake`
-  - alternative see http://www.cmake.org/cmake/resources/software.html
-- Git-bash or your preferred git client
-  - `winget install -e --id Git.Git`
-  - alternative see https://gitforwindows.org/
-- MSYS2 if you like to install everything with pacma
-  - `winget install -e --id MSYS2.MSYS2`
-  - add `C:\msys64\mingw64\bin` to the environment variable `Path`
-- Qt6 framework 6.x
-  - inside MSYS2: `pacman -S mingw-w64-x86_64-qt6-base`
-  - alternative see https://www.qt.io/offline-installers
-- GCC / G++ for Linux build, version 11.0 or later
-  - inside MSYS2: `pacman -S mingw-w64-ucrt-x86_64-gcc`
-  - alternative mingw-w64 11 for windows build see https://www.mingw-w64.org/downloads
-- USB lib
-  - inside MSYS2: `pacman -S mingw-w64-x86_64-libusb`
+This guide uses the **UCRT64** environment and the **Ninja** build system, matching the CI pipeline.
 
-### Manual build for Windows
+#### 1. Install MSYS2
 
-Once you have all pre-requisites ready, clone the repository:
+Download and install MSYS2 from https://www.msys2.org/, or via winget:
+
 ```
+winget install -e --id MSYS2.MSYS2
+```
+
+#### 2. Install dependencies
+
+Open the **MSYS2 UCRT64** terminal (`C:\msys64\ucrt64.exe`) and install the required packages:
+
+```bash
+pacman -Syu
+pacman -S --needed \
+  mingw-w64-ucrt-x86_64-toolchain \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-qt6 \
+  mingw-w64-ucrt-x86_64-libusb \
+  mingw-w64-ucrt-x86_64-pkgconf
+```
+
+#### 3. Clone the repository
+
+```bash
 git clone https://github.com/josevcm/nfc-laboratory.git
+cd nfc-laboratory
 ```
 
-Create a **build** directory and configure the project (change `CMAKE_BUILD_TYPE=Debug` and `-B cmake-build-debug` for debug output)
+#### 4. Configure and build
 
-```
-cmake -DCMAKE_BUILD_TYPE=Release -G "CodeBlocks - MinGW Makefiles" -S nfc-laboratory -B build
-```
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/ucrt64
 
-Compile the project:
-```
-cmake --build build --target nfc-lab -- -j 6
-```
-
-```
-cmake
-[  1%] Building C object src/nfc-lib/lib-ext/microtar/CMakeFiles/microtar.dir/src/main/c/microtar.c.obj
-[  2%] Building C object src/nfc-lib/lib-ext/mufft/CMakeFiles/mufft-sse.dir/src/main/c/x86/kernel.sse.c.obj
-[  2%] Building C object src/nfc-lib/lib-ext/airspy/CMakeFiles/airspy.dir/src/main/c/airspy.c.obj
-....
-[ 98%] Linking CXX executable nfc-lab.exe
-[100%] Built target nfc-lab
+cmake --build build --parallel
 ```
 
-Create a coppy of the application for easier access:
+The resulting binary is at `build/src/nfc-app/app-qt/nfc-lab.exe`.
 
+#### 5. Deploy Qt runtime
+
+Run `windeployqt` to copy the required Qt DLLs next to the executable:
+
+```bash
+/ucrt64/bin/windeployqt \
+  --compiler-runtime \
+  --no-translations \
+  --no-system-d3d-compiler \
+  --no-opengl-sw \
+  build/src/nfc-app/app-qt/nfc-lab.exe
 ```
-cp .\build\src\nfc-app\app-qt\nfc-lab.exe nfc-lab.exe
+
+#### 6. Copy SDR driver DLLs
+
+```bash
+cp dll/airspy/x86_64/bin/*.dll   build/src/nfc-app/app-qt/
+cp dll/hydrasdr/x86_64/bin/*.dll build/src/nfc-app/app-qt/
+cp dll/rtlsdr/x86_64/bin/*.dll   build/src/nfc-app/app-qt/
 ```
 
-Application is ready to use!
+#### 7. Copy resources
 
-If you do not have an SDR receiver, I have included a small capture sample signal in file "wav/capture-424kbps.wav" that
-serves as an example to test demodulation.
+```bash
+cp -r dat/config    build/src/nfc-app/app-qt/
+cp -r dat/drivers   build/src/nfc-app/app-qt/
+cp -r dat/firmware  build/src/nfc-app/app-qt/
+```
+
+#### 8. Run
+
+```bash
+./build/src/nfc-app/app-qt/nfc-lab.exe
+```
 
 ### Manual build for Linux
 

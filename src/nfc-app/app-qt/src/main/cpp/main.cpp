@@ -177,6 +177,15 @@ int startApp(int argc, char *argv[])
    // create executor service
    rt::Executor executor(128, 10);
 
+   // Shut down executor while the Qt event loop is still active so background
+   // threads exit before Qt begins its own TLS cleanup. Without this, PCRE2 JIT
+   // stacks allocated in executor threads (via postEvent calls) are freed after
+   // Qt's internal state is partially torn down, crashing on VirtualFree.
+   QObject::connect(&app, &QCoreApplication::aboutToQuit, [&executor]() {
+      executor.shutdown();
+   });
+
+   // start all worker threads
    executor.submit(lab::FourierProcessTask::construct()); // startup fourier transform
    executor.submit(lab::LogicDecoderTask::construct()); // startup logic decoder
    executor.submit(lab::LogicDeviceTask::construct()); // startup logic receiver
