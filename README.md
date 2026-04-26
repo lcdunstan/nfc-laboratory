@@ -348,8 +348,8 @@ biasTee=1
 ```
 ### Direct Sampling mode
 
-Another way to avoid using harmonics is activate direct sampling mode and tune to the carrier frequency of 13.56Mhz in those devices that allow it. 
-Currently it is only available for RTLSDR thanks to the contribution of [Vincent Långström](https://github.com/vinicentus). You can use direct 
+Another way to avoid using harmonics is activating direct sampling mode and tune to the carrier frequency of 13.56Mhz in those devices that allow it. 
+Currently, it is only available for RTLSDR thanks to the contribution of [Vincent Långström](https://github.com/vinicentus). You can use direct 
 sampling on either the Q- or I-branch. The Q-branch is preferred due to better results, set the Q-branch with directSampling=2 and the I-branch 
 with directSampling=1, directSampling=0 turns off direct sampling.
 
