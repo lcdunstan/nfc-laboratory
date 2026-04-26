@@ -81,16 +81,16 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install mesa libusb qt qtsvg cmake gcc
+          brew install libusb qt cmake gcc
 
       - name: Build project
         run: |
           mkdir build
           cd build
-          cmake .. `
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_PROJECT_VERSION="${{ steps.strings-macos.outputs.build-version }}"
-          
+
           make -j ${{ steps.strings-macos.outputs.cpu-count }}
 
   #
