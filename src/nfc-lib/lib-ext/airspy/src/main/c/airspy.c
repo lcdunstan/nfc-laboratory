@@ -76,6 +76,7 @@ typedef struct airspy_device
 	airspy_sample_block_cb_fn callback;
 	volatile bool streaming;
 	volatile bool stop_requested;
+	volatile int active_transfers;
 	pthread_t transfer_thread;
 	pthread_t consumer_thread;
 	pthread_cond_t consumer_cv;
@@ -267,6 +268,7 @@ static int prepare_transfers(airspy_device_t* device, const uint_fast8_t endpoin
 	uint32_t transfer_index;
 	if (device->transfers != NULL)
 	{
+		device->active_transfers = 0;
 		for (transfer_index = 0; transfer_index<device->transfer_count; transfer_index++)
 		{
 			device->transfers[transfer_index]->endpoint = endpoint_address;
@@ -277,6 +279,7 @@ static int prepare_transfers(airspy_device_t* device, const uint_fast8_t endpoin
 			{
 				return AIRSPY_ERROR_LIBUSB;
 			}
+			device->active_transfers++;
 		}
 		return AIRSPY_SUCCESS;
 	}
@@ -441,6 +444,8 @@ static void airspy_libusb_transfer_callback(struct libusb_transfer* usb_transfer
 
 	if (!device->streaming || device->stop_requested)
 	{
+		/* Transfer completed or cancelled while stopping — not resubmitting. */
+		device->active_transfers--;
 		return;
 	}
 
@@ -456,7 +461,7 @@ static void airspy_libusb_transfer_callback(struct libusb_transfer* usb_transfer
 
 			device->dropped_buffers_queue[device->received_samples_queue_head] = device->dropped_buffers;
 			device->dropped_buffers = 0;
-			
+
 			device->received_samples_queue_head = (device->received_samples_queue_head + 1) & (RAW_BUFFER_COUNT - 1);
 			device->received_buffer_count++;
 
@@ -471,12 +476,17 @@ static void airspy_libusb_transfer_callback(struct libusb_transfer* usb_transfer
 
 		if (libusb_submit_transfer(usb_transfer) != 0)
 		{
+			/* Resubmit failed — transfer is no longer in flight. */
 			device->stop_requested = true;
+			device->active_transfers--;
 		}
+		/* On successful resubmit: active_transfers stays the same. */
 	}
 	else
 	{
+		/* Transfer error or short transfer — not resubmitting. */
 		device->stop_requested = true;
+		device->active_transfers--;
 	}
 }
 
@@ -509,8 +519,6 @@ static void* transfer_threadproc(void* arg)
 
 static int kill_io_threads(airspy_device_t* device)
 {
-	struct timeval timeout = { 0, 0 };
-
 	if (device->streaming)
 	{
 		device->stop_requested = true;
@@ -523,7 +531,23 @@ static int kill_io_threads(airspy_device_t* device)
 		pthread_join(device->transfer_thread, NULL);
 		pthread_join(device->consumer_thread, NULL);
 
-		libusb_handle_events_timeout_completed(device->usb_context, &timeout, NULL);
+		/* Drain all remaining IOCP cancellation completions before returning.
+		 * On Windows, CancelIo() is asynchronous: the IOCP completion may not
+		 * have been queued yet when the transfer thread exits.  If we skip this
+		 * drain, free_transfers() in airspy_close() frees the transfer objects
+		 * while Windows can still write into them, causing a crash.
+		 * We loop until every submitted transfer has reported back via its
+		 * callback (active_transfers reaches zero). */
+		{
+			struct timeval drain = { 0, 1000 }; /* 1 ms per call */
+			int rc;
+			while (device->active_transfers > 0)
+			{
+				rc = libusb_handle_events_timeout_completed(device->usb_context, &drain, NULL);
+				if (rc < 0 && rc != LIBUSB_ERROR_INTERRUPTED)
+					break;
+			}
+		}
 
 		device->stop_requested = false;
 		device->streaming = false;
@@ -803,6 +827,7 @@ static int airspy_open_init(airspy_device_t** device, uint64_t serial_number)
 	lib_device->packing_enabled = false;
 	lib_device->streaming = false;
 	lib_device->stop_requested = false;
+	lib_device->active_transfers = 0;
 	lib_device->sample_type = AIRSPY_SAMPLE_FLOAT32_IQ;
 
 	result = airspy_read_samplerates_from_fw(lib_device, &lib_device->supported_samplerate_count, 0);
