@@ -554,64 +554,86 @@ Contains the following components:
 
 All can be compiled with mingw-g64, a minimum version is required to support C++17, recommended 11.0 or higher.
 
-### Prerequisites
+### Manual build for Windows (MSYS2)
 
-- CMake version 3.16 or higher
-  - `winget install -e --id=Kitware.CMake`
-  - alternative see http://www.cmake.org/cmake/resources/software.html
-- Git-bash or your preferred git client
-  - `winget install -e --id Git.Git`
-  - alternative see https://gitforwindows.org/
-- MSYS2 if you like to install everything with pacma
-  - `winget install -e --id MSYS2.MSYS2`
-  - add `C:\msys64\mingw64\bin` to the environment variable `Path`
-- Qt6 framework 6.x
-  - inside MSYS2: `pacman -S mingw-w64-x86_64-qt6-base`
-  - alternative see https://www.qt.io/offline-installers
-- GCC / G++ for Linux build, version 11.0 or later
-  - inside MSYS2: `pacman -S mingw-w64-ucrt-x86_64-gcc`
-  - alternative mingw-w64 11 for windows build see https://www.mingw-w64.org/downloads
-- USB lib
-  - inside MSYS2: `pacman -S mingw-w64-x86_64-libusb`
+This guide uses the **UCRT64** environment and the **Ninja** build system, matching the CI pipeline.
 
-### Manual build for Windows
+#### 1. Install MSYS2
 
-Once you have all pre-requisites ready, clone the repository:
+Download and install MSYS2 from https://www.msys2.org/, or via winget:
+
 ```
+winget install -e --id MSYS2.MSYS2
+```
+
+#### 2. Install dependencies
+
+Open the **MSYS2 UCRT64** terminal (`C:\msys64\ucrt64.exe`) and install the required packages:
+
+```bash
+pacman -Syu
+pacman -S --needed \
+  mingw-w64-ucrt-x86_64-toolchain \
+  mingw-w64-ucrt-x86_64-cmake \
+  mingw-w64-ucrt-x86_64-ninja \
+  mingw-w64-ucrt-x86_64-qt6 \
+  mingw-w64-ucrt-x86_64-libusb \
+  mingw-w64-ucrt-x86_64-pkgconf
+```
+
+#### 3. Clone the repository
+
+```bash
 git clone https://github.com/josevcm/nfc-laboratory.git
+cd nfc-laboratory
 ```
 
-Create a **build** directory and configure the project (change `CMAKE_BUILD_TYPE=Debug` and `-B cmake-build-debug` for debug output)
+#### 4. Configure and build
 
-```
-cmake -DCMAKE_BUILD_TYPE=Release -G "CodeBlocks - MinGW Makefiles" -S nfc-laboratory -B build
-```
+```bash
+cmake -S . -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_PREFIX_PATH=/ucrt64
 
-Compile the project:
-```
-cmake --build build --target nfc-lab -- -j 6
-```
-
-```
-cmake
-[  1%] Building C object src/nfc-lib/lib-ext/microtar/CMakeFiles/microtar.dir/src/main/c/microtar.c.obj
-[  2%] Building C object src/nfc-lib/lib-ext/mufft/CMakeFiles/mufft-sse.dir/src/main/c/x86/kernel.sse.c.obj
-[  2%] Building C object src/nfc-lib/lib-ext/airspy/CMakeFiles/airspy.dir/src/main/c/airspy.c.obj
-....
-[ 98%] Linking CXX executable nfc-lab.exe
-[100%] Built target nfc-lab
+cmake --build build --parallel
 ```
 
-Create a coppy of the application for easier access:
+The resulting binary is at `build/src/nfc-app/app-qt/nfc-lab.exe`.
 
+#### 5. Deploy Qt runtime
+
+Run `windeployqt` to copy the required Qt DLLs next to the executable:
+
+```bash
+/ucrt64/bin/windeployqt \
+  --compiler-runtime \
+  --no-translations \
+  --no-system-d3d-compiler \
+  --no-opengl-sw \
+  build/src/nfc-app/app-qt/nfc-lab.exe
 ```
-cp .\build\src\nfc-app\app-qt\nfc-lab.exe nfc-lab.exe
+
+#### 6. Copy SDR driver DLLs
+
+```bash
+cp dll/airspy/x86_64/bin/*.dll   build/src/nfc-app/app-qt/
+cp dll/hydrasdr/x86_64/bin/*.dll build/src/nfc-app/app-qt/
+cp dll/rtlsdr/x86_64/bin/*.dll   build/src/nfc-app/app-qt/
 ```
 
-Application is ready to use!
+#### 7. Copy resources
 
-If you do not have an SDR receiver, I have included a small capture sample signal in file "wav/capture-424kbps.wav" that
-serves as an example to test demodulation.
+```bash
+cp -r dat/config    build/src/nfc-app/app-qt/
+cp -r dat/drivers   build/src/nfc-app/app-qt/
+cp -r dat/firmware  build/src/nfc-app/app-qt/
+```
+
+#### 8. Run
+
+```bash
+./build/src/nfc-app/app-qt/nfc-lab.exe
+```
 
 ### Manual build for Linux
 
