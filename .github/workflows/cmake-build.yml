@@ -61,6 +61,9 @@ jobs:
           name: linux-artifact
           path: ${{ github.workspace }}/*.deb
 
+  #
+  # MacOS build job
+  #
   build-macos:
     runs-on: macos-latest
     steps:
