@@ -176,23 +176,21 @@ jobs:
       - name: Resolve runtime dependencies (ldd)
         shell: msys2 {0}
         run: |
+          BUILD_DIR=$(cygpath "${{ steps.strings-windows.outputs.build-dir }}")
           INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
+          APP="$BUILD_DIR/src/nfc-app/app-qt/nfc-lab.exe"
 
-          echo "📦 Copying required DLLs (recursive)..."
-          while true; do
-            COUNT_BEFORE=$(ls "$INSTALLER_DATA"/*.dll 2>/dev/null | wc -l)
-            for binary in "$INSTALLER_DATA"/*.exe "$INSTALLER_DATA"/*.dll; do
-              [[ -f "$binary" ]] || continue
-              ldd "$binary" 2>/dev/null | while read line; do
-                dll=$(echo "$line" | awk '{print $3}')
-                if [[ -f "$dll" && "$dll" != "$INSTALLER_DATA"* && "$dll" != /c/Windows/* ]]; then
-                  cp -vu "$dll" "$INSTALLER_DATA/"
-                fi
-              done
-            done
-            COUNT_AFTER=$(ls "$INSTALLER_DATA"/*.dll 2>/dev/null | wc -l)
-            [[ "$COUNT_AFTER" -eq "$COUNT_BEFORE" ]] && break
-          done
+          echo "🔍 Detecting dependencies..."
+          ldd "$APP" > deps.txt
+          cat deps.txt
+
+          echo "📦 Copying required DLLs..."
+          while read line; do
+            dll=$(echo "$line" | awk '{print $3}')
+            if [[ -f "$dll" && "$dll" != "$INSTALLER_DATA"* && "$dll" != /c/Windows/* ]]; then
+              cp -vu "$dll" "$INSTALLER_DATA/"
+            fi
+          done < deps.txt
 
       - name: Copy external DLLs
         shell: powershell
