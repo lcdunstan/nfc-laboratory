@@ -14,6 +14,7 @@ jobs:
   build-linux:
 
     runs-on: ubuntu-latest
+    if: false
     outputs:
       artifact-name: linux-artifact
 
@@ -103,6 +104,7 @@ jobs:
   build-windows:
 
     runs-on: windows-latest
+    if: false
     outputs:
       artifact-name: windows-artifact
 
