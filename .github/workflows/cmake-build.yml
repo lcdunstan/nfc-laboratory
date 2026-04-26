@@ -14,7 +14,6 @@ jobs:
   build-linux:
 
     runs-on: ubuntu-latest
-    if: false
     outputs:
       artifact-name: linux-artifact
 
@@ -64,7 +63,6 @@ jobs:
 
   build-macos:
     runs-on: macos-latest
-    if: false
     steps:
 
       - name: Check out code
@@ -173,7 +171,7 @@ jobs:
           --no-opengl-sw \
           "$INSTALLER_DATA/nfc-lab.exe"
 
-      - name: Resolve runtime dependencies (ldd)
+      - name: Resolve runtime dependencies
         shell: msys2 {0}
         run: |
           INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
