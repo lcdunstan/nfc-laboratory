@@ -266,6 +266,11 @@ works with others.
   very clean signals with good antenna. This device is supported only as a reference to experiment with it, I not
   recommend using it if you want to obtain good results.
 
+> **Antenna note:** The most challenging part of the whole setup is obtaining a suitable antenna correctly tuned for
+> 13.56 MHz. A poorly matched or mistuned antenna will result in weak signals, missed frames and unreliable decoding
+> regardless of the SDR used. The recommended approach is to reuse antennas salvaged from commercial NFC readers, as
+> these are already designed and tuned for 13.56 MHz and provide excellent coupling with NFC cards and tags.
+
 Receivers tested, from left to right:
 
 ![Devices](doc/img/nfc-lab-devices1.png "Devices")
@@ -281,6 +286,33 @@ AirSpy with custom antenna and ARC122U reader:
 HydraSDR RFOne with custom antenna made from RC522 reader PCB:
 
 ![Devices](doc/img/nfc-lab-devices8.png "Devices")
+
+### Antenna using a commercial RC522 PCB
+
+An inexpensive and very effective antenna can be built by repurposing a standard MFRC522-based reader board
+(commonly sold as RC522 modules). These boards include an antenna loop already designed and tuned for 13.56 MHz,
+along with a matching capacitor network, making them ideal for this purpose.
+
+#### Modification
+
+1. **Remove the MFRC522 chip** from the PCB. The chip is not needed; only the antenna and its matching network
+   are used. It can be desoldered or simply left in place without connections if removal is not practical.
+
+2. **Identify the antenna feed points** on the PCB. On most RC522 boards these correspond to the pads
+   previously connected to the TX1 and VMID pins of the chip.
+
+![RC522 antenna mod](doc/img/rc522-antenna-mod2.png)
+
+3. **Connect the SDR receiver** to the antenna circuit:
+   - SDR antenna input (centre conductor) → **TX1** or **TX2** pad on the RC522 PCB
+   - SDR ground → **GND / VMID** pad on the RC522 PCB
+
+![RC522 antenna mod](doc/img/rc522-antenna-mod1.png)
+
+#### Result
+
+This modification gives a compact, well-matched antenna that couples efficiently with NFC cards and tags placed
+directly on the board surface. The photo above shows this setup used with a HydraSDR RFOne receiver.
 
 ### Driver Setup for RTL-SDR
 
