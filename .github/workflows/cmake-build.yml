@@ -81,13 +81,17 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install libusb qt cmake gcc
+          brew install libusb qt cmake gcc libomp
 
       - name: Build project
         run: |
+          GCC_BIN=$(ls /opt/homebrew/bin/gcc-* | sort -V | tail -1)
+          GXX_BIN=$(ls /opt/homebrew/bin/g++-* | sort -V | tail -1)
           mkdir build
           cd build
           cmake .. \
+            -DCMAKE_C_COMPILER="$GCC_BIN" \
+            -DCMAKE_CXX_COMPILER="$GXX_BIN" \
             -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_PROJECT_VERSION="${{ steps.strings-macos.outputs.build-version }}"
 
