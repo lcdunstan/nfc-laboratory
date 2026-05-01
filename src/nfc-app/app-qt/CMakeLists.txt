@@ -1,5 +1,43 @@
 set(CMAKE_CXX_STANDARD 17)
 
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+
+set(PROTO_DIR     ${CMAKE_CURRENT_SOURCE_DIR}/src/main/proto)
+set(PROTO_FILE    ${PROTO_DIR}/nfc_control.proto)
+set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR})
+
+get_target_property(GRPC_CPP_PLUGIN gRPC::grpc_cpp_plugin LOCATION)
+
+add_custom_command(
+        OUTPUT
+            ${PROTO_GEN_DIR}/nfc_control.pb.cc
+            ${PROTO_GEN_DIR}/nfc_control.pb.h
+            ${PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
+            ${PROTO_GEN_DIR}/nfc_control.grpc.pb.h
+        COMMAND $<TARGET_FILE:protobuf::protoc>
+        ARGS
+            --grpc_out=${PROTO_GEN_DIR}
+            --cpp_out=${PROTO_GEN_DIR}
+            --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
+            -I${PROTO_DIR}
+            ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Generating gRPC/protobuf stubs from nfc_control.proto"
+)
+
+add_library(nfc-control-proto STATIC
+        ${PROTO_GEN_DIR}/nfc_control.pb.cc
+        ${PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
+)
+
+target_include_directories(nfc-control-proto PUBLIC ${PROTO_GEN_DIR})
+
+target_link_libraries(nfc-control-proto
+        gRPC::grpc++
+        protobuf::libprotobuf
+)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
@@ -29,6 +67,8 @@ set(SOURCES
         ${PRIVATE_SOURCE_DIR}/QtWindow.cpp
         ${PRIVATE_SOURCE_DIR}/events/ConsoleLogEvent.cpp
         ${PRIVATE_SOURCE_DIR}/events/DecoderControlEvent.cpp
+        ${PRIVATE_SOURCE_DIR}/rpc/GrpcControl.cpp
+        ${PRIVATE_SOURCE_DIR}/rpc/GrpcServer.cpp
         ${PRIVATE_SOURCE_DIR}/events/FourierStatusEvent.cpp
         ${PRIVATE_SOURCE_DIR}/events/LogicDecoderStatusEvent.cpp
         ${PRIVATE_SOURCE_DIR}/events/LogicDeviceStatusEvent.cpp
@@ -115,6 +155,7 @@ add_compile_definitions(QT_DISABLE_DEPRECATED_UP_TO=0x050F00)
 target_include_directories(nfc-lab PRIVATE ${PRIVATE_SOURCE_DIR})
 target_include_directories(nfc-lab PRIVATE ${AUTOGEN_BUILD_DIR}/include)
 target_include_directories(nfc-lab PRIVATE ${LIBUSB_INCLUDE_DIRS})
+target_include_directories(nfc-lab PRIVATE ${PROTO_GEN_DIR})
 
 target_link_libraries(nfc-lab
         ${PLATFORM_LIBS}
@@ -128,6 +169,7 @@ target_link_libraries(nfc-lab
         Qt6::Widgets
         Qt6::Network
         Qt6::PrintSupport
+        nfc-control-proto
 )
 
 # Install targets
