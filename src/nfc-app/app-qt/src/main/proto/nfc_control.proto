@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+service RemoteControl {
+  rpc Start  (ControlRequest) returns (ControlResponse);
+  rpc Stop   (ControlRequest) returns (ControlResponse);
+  rpc Pause  (ControlRequest) returns (ControlResponse);
+  rpc Resume (ControlRequest) returns (ControlResponse);
+}
+
+message ControlRequest {}
+
+message ControlResponse {
+  bool   success = 1;
+  string message = 2;
+  State  state   = 3;
+}
+
+enum State {
+  UNKNOWN = 0;
+  IDLE    = 1;
+  RUNNING = 2;
+  PAUSED  = 3;
+}
