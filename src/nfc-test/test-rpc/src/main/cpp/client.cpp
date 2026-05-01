@@ -25,71 +25,79 @@
 
 #include <grpcpp/grpcpp.h>
 
-#include "nfc_capture.grpc.pb.h"
+#include "nfc_control.grpc.pb.h"
 
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-class SignalCaptureClient
+static const char *stateToString(State state)
+{
+   switch (state)
+   {
+      case State::IDLE:    return "idle";
+      case State::RUNNING: return "running";
+      case State::PAUSED:  return "paused";
+      default:             return "unknown";
+   }
+}
+
+class RemoteControlClient
 {
 public:
-   explicit SignalCaptureClient(std::shared_ptr<Channel> channel)
-      : stub(nfc::SignalCapture::NewStub(channel))
+   explicit RemoteControlClient(std::shared_ptr<Channel> channel)
+      : stub(RemoteControl::NewStub(channel))
    {
    }
 
-   bool start()
+   bool execute(const std::string &command)
    {
-      nfc::StartRequest request;
-      nfc::StartResponse response;
+      ControlRequest request;
+      ControlResponse response;
       ClientContext context;
+      Status status;
 
-      Status status = stub->Start(&context, request, &response);
-
-      if (!status.ok())
+      if (command == "start")
+         status = stub->Start(&context, request, &response);
+      else if (command == "stop")
+         status = stub->Stop(&context, request, &response);
+      else if (command == "pause")
+         status = stub->Pause(&context, request, &response);
+      else if (command == "resume")
+         status = stub->Resume(&context, request, &response);
+      else
       {
-         std::cerr << "[test-rpc-client] start failed: " << status.error_message() << std::endl;
+         std::cerr << "[test-rpc-client] unknown command: " << command << std::endl;
          return false;
       }
 
-      std::cout << "[test-rpc-client] start response: success=" << response.success()
-                << " message=\"" << response.message() << "\"" << std::endl;
-
-      return response.success();
-   }
-
-   bool stop()
-   {
-      nfc::StopRequest request;
-      nfc::StopResponse response;
-      ClientContext context;
-
-      Status status = stub->Stop(&context, request, &response);
-
       if (!status.ok())
       {
-         std::cerr << "[test-rpc-client] stop failed: " << status.error_message() << std::endl;
+         std::cerr << "[test-rpc-client] " << command << " failed: " << status.error_message() << std::endl;
          return false;
       }
 
-      std::cout << "[test-rpc-client] stop response: success=" << response.success()
-                << " message=\"" << response.message() << "\"" << std::endl;
+      std::cout << "[test-rpc-client] " << command << " response:"
+                << " success=" << (response.success() ? "true" : "false")
+                << " message=\"" << response.message() << "\""
+                << " state=" << stateToString(response.state())
+                << std::endl;
 
       return response.success();
    }
 
 private:
-   std::unique_ptr<nfc::SignalCapture::Stub> stub;
+   std::unique_ptr<RemoteControl::Stub> stub;
 };
 
 void printUsage(const char *name)
 {
-   std::cout << "Usage: " << name << " [host:port] [start|stop]" << std::endl;
+   std::cout << "Usage: " << name << " [host:port] <command>" << std::endl;
    std::cout << "  host:port  server address (default: localhost:50051)" << std::endl;
-   std::cout << "  start      call Start only" << std::endl;
-   std::cout << "  stop       call Stop only" << std::endl;
-   std::cout << "  (none)     call Start then Stop" << std::endl;
+   std::cout << "  start      start capture" << std::endl;
+   std::cout << "  stop       stop capture" << std::endl;
+   std::cout << "  pause      pause capture" << std::endl;
+   std::cout << "  resume     resume capture" << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -110,7 +118,7 @@ int main(int argc, char *argv[])
          printUsage(argv[0]);
          return 0;
       }
-      else if (arg == "start" || arg == "stop")
+      else if (arg == "start" || arg == "stop" || arg == "pause" || arg == "resume")
       {
          command = arg;
       }
@@ -120,21 +128,15 @@ int main(int argc, char *argv[])
       }
    }
 
-   SignalCaptureClient client(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
+   if (command.empty())
+   {
+      printUsage(argv[0]);
+      return 1;
+   }
+
+   RemoteControlClient client(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
 
    std::cout << "[test-rpc-client] connecting to " << address << std::endl;
 
-   if (command == "start")
-   {
-      return client.start() ? 0 : 1;
-   }
-   else if (command == "stop")
-   {
-      return client.stop() ? 0 : 1;
-   }
-   else
-   {
-      bool ok = client.start() && client.stop();
-      return ok ? 0 : 1;
-   }
+   return client.execute(command) ? 0 : 1;
 }
