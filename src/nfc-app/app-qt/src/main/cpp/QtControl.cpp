@@ -408,6 +408,8 @@ struct QtControl::Impl
    {
       qInfo() << "start decoder and receiver tasks";
 
+      auto completion = event->completion;
+
       // if event contains file name and sample rate start recorder
       if (event->contains("storagePath"))
       {
@@ -421,6 +423,9 @@ struct QtControl::Impl
 
                // ...start logic and radio devices
                startDecoders();
+
+               if (completion)
+                  completion->set_value({true, "running", 2});
             });
          });
       }
@@ -433,6 +438,9 @@ struct QtControl::Impl
 
             // ...start logic and radio devices
             startDecoders();
+
+            if (completion)
+               completion->set_value({true, "running", 2});
          });
       }
    }
@@ -455,6 +463,9 @@ struct QtControl::Impl
       // stop radio receiver task
       if (!storagePath.isEmpty())
          taskRecorderStop();
+
+      if (event->completion)
+         event->completion->set_value({true, "stopped", 1});
    }
 
    /*
@@ -471,6 +482,9 @@ struct QtControl::Impl
       // stop radio receiver task
       if (!radioDeviceType.isEmpty())
          taskRadioDevicePause();
+
+      if (event->completion)
+         event->completion->set_value({true, "paused", 3});
    }
 
    /*
@@ -487,6 +501,9 @@ struct QtControl::Impl
       // stop radio receiver task
       if (!radioDeviceType.isEmpty())
          taskRadioDeviceResume();
+
+      if (event->completion)
+         event->completion->set_value({true, "running", 2});
    }
 
    /*
