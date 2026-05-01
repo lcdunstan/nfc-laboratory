@@ -114,7 +114,7 @@ add_compile_definitions(QT_DISABLE_DEPRECATED_UP_TO=0x050F00)
 
 target_include_directories(nfc-lab PRIVATE ${PRIVATE_SOURCE_DIR})
 target_include_directories(nfc-lab PRIVATE ${AUTOGEN_BUILD_DIR}/include)
-target_include_directories(nfc-lab PRIVATE ${LIBUSB_INCLUDE_DIR})
+target_include_directories(nfc-lab PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
 target_link_libraries(nfc-lab
         ${PLATFORM_LIBS}

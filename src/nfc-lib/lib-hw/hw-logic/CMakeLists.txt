@@ -10,5 +10,6 @@ add_library(hw-logic STATIC
 
 target_include_directories(hw-logic PUBLIC ${PUBLIC_INCLUDE_DIR})
 target_include_directories(hw-logic PRIVATE ${PRIVATE_SOURCE_DIR})
+target_include_directories(hw-logic PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
-target_link_libraries(hw-logic rt-lang hw-dev)
+target_link_libraries(hw-logic rt-lang hw-dev ${LIBUSB_LIBRARIES})

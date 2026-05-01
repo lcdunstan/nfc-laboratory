@@ -19,10 +19,10 @@ jobs:
 
     steps:
 
-      - name: 'Check out code'
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: 'Set reusable strings'
+      - name: Set reusable strings
         id: strings-linux
         shell: bash
         run: |
@@ -38,7 +38,7 @@ jobs:
 #          path: |
 #            /var/cache/apt/archives
 
-      - name: 'Install dependencies'
+      - name: Install dependencies
         run: |
           sudo apt update
           sudo apt install -y devscripts build-essential debhelper-compat cmake qt6-base-dev libusb-1.0-0-dev zlib1g-dev libgl1-mesa-dev
@@ -46,7 +46,7 @@ jobs:
             sudo apt install -y $pkg || true
           done
 
-      - name: 'Build project'
+      - name: Build project
         run: |
           export DEBEMAIL="josevcm@gmail.com"
           export DEBFULLNAME="Jose Vicente Campos"
@@ -55,22 +55,24 @@ jobs:
           dpkg-buildpackage -us -uc -j${{ steps.strings-linux.outputs.cpu-count }}
           mv ../*.deb .
 
-      - name: 'Upload artifact'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: linux-artifact
           path: ${{ github.workspace }}/*.deb
 
+  #
+  # MacOS build job
+  #
   build-macos:
-
     runs-on: macos-latest
-
+    if: false
     steps:
 
-      - name: 'Check out code'
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: 'Set reusable strings'
+      - name: Set reusable strings
         id: strings-macos
         shell: bash
         run: |
@@ -78,17 +80,18 @@ jobs:
           echo "build-version=${{ (github.ref_name == 'master' || github.ref_name == 'develop') && '0.0.0' || github.ref_name }}" >> "$GITHUB_OUTPUT"
           echo "cpu-count=4" >> "$GITHUB_OUTPUT"
 
-      - name: 'Install dependencies'
+      - name: Install dependencies
         run: |
-          brew install mesa libusb qt qtsvg cmake gcc
+          brew install libusb qt cmake gcc
 
-      - name: 'Build project'
+      - name: Build project
         run: |
           mkdir build
           cd build
-          cmake .. `
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
+          cmake .. \
+            -DCMAKE_BUILD_TYPE=Release \
             -DBUILD_PROJECT_VERSION="${{ steps.strings-macos.outputs.build-version }}"
+
           make -j ${{ steps.strings-macos.outputs.cpu-count }}
 
   #
@@ -102,104 +105,134 @@ jobs:
 
     steps:
 
-      - name: 'Check out code'
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: 'Set reusable strings'
+      - name: Set reusable strings
         id: strings-windows
         shell: bash
         run: |
           echo "build-dir=${{ github.workspace }}/build" >> "$GITHUB_OUTPUT"
           echo "build-name=${{ (github.ref_name == 'master' || github.ref_name == 'develop') && 'snapshot' || github.ref_name }}" >> "$GITHUB_OUTPUT"
           echo "build-version=${{ (github.ref_name == 'master' || github.ref_name == 'develop') && '0.0.0' || github.ref_name }}" >> "$GITHUB_OUTPUT"
-          echo "qt-dir=${{ github.workspace }}/qt/6.7.2/mingw_64" >> "$GITHUB_OUTPUT"
-          echo "ninja-dir=${{ github.workspace }}/tools/ninja" >> "$GITHUB_OUTPUT"
-          echo "cmake-dir=${{ github.workspace }}/tools/cmake_64" >> "$GITHUB_OUTPUT"
-          echo "mingw-dir=${{ github.workspace }}/tools/mingw1310_64" >> "$GITHUB_OUTPUT"
-          echo "package-dir=${{ github.workspace }}/build/installer/package" >> "$GITHUB_OUTPUT"
           echo "installer-data-dir=${{ github.workspace }}/build/installer/data" >> "$GITHUB_OUTPUT"
           echo "installer-meta-dir=${{ github.workspace }}/build/installer/meta" >> "$GITHUB_OUTPUT"
-          echo "cpu-count=4" >> "$GITHUB_OUTPUT"
 
-      - name: 'Cache dependencies'
-        id: cache-dependencies
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-qt6
+            mingw-w64-ucrt-x86_64-grpc
+            mingw-w64-ucrt-x86_64-libusb
+            mingw-w64-ucrt-x86_64-nsis
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Cache pacman packages
         uses: actions/cache@v4
         with:
-          key: ${{ runner.os }}-qt-dependencies
-          path: |
-            ${{ github.workspace }}/qt
-            ${{ github.workspace }}/tools
+          path: C:\msys64\var\cache\pacman\pkg
+          key: msys2-${{ runner.os }}-${{ hashFiles('**/CMakeLists.txt') }}
+          restore-keys: |
+            msys2-${{ runner.os }}-
 
-      - name: 'Install dependencies'
-        if: steps.cache-dependencies.outputs.cache-hit != 'true'
+      - name: Build project
+        shell: msys2 {0}
         run: |
-          # install Qt and build tools
-          choco install aqt -y --no-progress -r
-          aqt install-qt windows desktop 6.7.2 win64_mingw --outputdir ${{ github.workspace }}/qt
-          aqt install-tool windows desktop tools_mingw1310 qt.tools.win64_mingw1310 --outputdir ${{ github.workspace }}
-          aqt install-tool windows desktop tools_cmake qt.tools.cmake --outputdir ${{ github.workspace }}
-          aqt install-tool windows desktop tools_ninja qt.tools.ninja --outputdir ${{ github.workspace }}
-
-      - name: 'Install NSIS'
-        run: |
-          choco install nsis.portable -y --no-progress -r
-
-      - name: 'Build project'
-        run: |
-          ${{ steps.strings-windows.outputs.cmake-dir }}/bin/cmake `
-            -S ${{ github.workspace }} `
-            -B ${{ steps.strings-windows.outputs.build-dir }} `
-            -G Ninja `
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} `
-            -DCMAKE_PREFIX_PATH=${{ steps.strings-windows.outputs.qt-dir }} `
-            -DCMAKE_C_COMPILER=${{ steps.strings-windows.outputs.mingw-dir }}/bin/gcc.exe `
-            -DCMAKE_CXX_COMPILER=${{ steps.strings-windows.outputs.mingw-dir }}/bin/g++.exe `
-            -DCMAKE_MAKE_PROGRAM=${{ steps.strings-windows.outputs.ninja-dir }}/ninja.exe `
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH=/ucrt64 \
             -DBUILD_PROJECT_VERSION="${{ steps.strings-windows.outputs.build-version }}"
-          ${{ steps.strings-windows.outputs.cmake-dir }}/bin/cmake `
-            --build ${{ steps.strings-windows.outputs.build-dir }} `
-            --target nfc-lab nfc-rx --parallel ${{ steps.strings-windows.outputs.cpu-count }}
 
-      - name: 'Create installer'
+          cmake --build build --parallel
+
+      - name: Prepare installer
+        shell: powershell
         run: |
-          # create installer folders
-          New-Item -Force -ItemType "directory" -Path ${{ steps.strings-windows.outputs.installer-data-dir }}
-          New-Item -Force -ItemType "directory" -Path ${{ steps.strings-windows.outputs.installer-meta-dir }}
-          
-          # copy executable and libraries
+          New-Item -Force -ItemType directory -Path ${{ steps.strings-windows.outputs.installer-data-dir }}
+          New-Item -Force -ItemType directory -Path ${{ steps.strings-windows.outputs.installer-meta-dir }}
+
+      - name: Copy executables
+        shell: powershell
+        run: |
           Copy-Item -Force ${{ steps.strings-windows.outputs.build-dir }}/src/nfc-app/app-qt/nfc-lab.exe ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force ${{ steps.strings-windows.outputs.build-dir }}/src/nfc-app/app-rx/nfc-rx.exe ${{ steps.strings-windows.outputs.installer-data-dir }}
-          Copy-Item -Force ${{ steps.strings-windows.outputs.mingw-dir }}/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
+
+      - name: Deploy Qt
+        shell: msys2 {0}
+        run: |
+          INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
+          /ucrt64/bin/windeployqt \
+          --verbose 1 \
+          --compiler-runtime \
+          --no-translations \
+          --no-system-d3d-compiler \
+          --no-opengl-sw \
+          "$INSTALLER_DATA/nfc-lab.exe"
+
+      - name: Resolve runtime dependencies
+        shell: msys2 {0}
+        run: |
+          INSTALLER_DATA=$(cygpath "${{ steps.strings-windows.outputs.installer-data-dir }}")
+
+          echo "📦 Resolving DLL dependencies iteratively..."
+          ITER=0
+          while true; do
+            ITER=$((ITER + 1))
+            COUNT_BEFORE=$(ls "$INSTALLER_DATA"/*.dll 2>/dev/null | wc -l)
+            echo "--- Iteration $ITER (DLLs in installer/data: $COUNT_BEFORE) ---"
+
+            for binary in "$INSTALLER_DATA"/*.exe "$INSTALLER_DATA"/*.dll; do
+              [[ -f "$binary" ]] || continue
+              ldd "$binary" 2>/dev/null | while read line; do
+                dll=$(echo "$line" | awk '{print $3}')
+                if [[ -f "$dll" && "$dll" != "$INSTALLER_DATA"* && "$dll" != /c/Windows/* ]]; then
+                  cp -vu "$dll" "$INSTALLER_DATA/"
+                fi
+              done
+            done
+
+            COUNT_AFTER=$(ls "$INSTALLER_DATA"/*.dll 2>/dev/null | wc -l)
+            if [[ "$COUNT_AFTER" -eq "$COUNT_BEFORE" ]]; then
+              echo "✅ Fixed point reached after $ITER iteration(s) — $COUNT_AFTER DLLs total"
+              break
+            fi
+          done
+
+      - name: Copy external DLLs
+        shell: powershell
+        run: |
           Copy-Item -Force ${{ github.workspace }}/dll/airspy/x86_64/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force ${{ github.workspace }}/dll/hydrasdr/x86_64/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
-          Copy-Item -Force ${{ github.workspace }}/dll/openssl/x86_64/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force ${{ github.workspace }}/dll/rtlsdr/x86_64/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
-          Copy-Item -Force ${{ github.workspace }}/dll/usb/x86_64/bin/*.dll ${{ steps.strings-windows.outputs.installer-data-dir }}
-          
-          # copy drivers, firmware and installer resources
+
+      - name: Copy resources
+        shell: powershell
+        run: |
           Copy-Item -Force -Recurse ${{ github.workspace }}/dat/config ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force -Recurse ${{ github.workspace }}/dat/drivers ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force -Recurse ${{ github.workspace }}/dat/firmware ${{ steps.strings-windows.outputs.installer-data-dir }}
           Copy-Item -Force -Recurse ${{ github.workspace }}/dat/resources ${{ steps.strings-windows.outputs.installer-meta-dir }}
-          
-          # create deployment
-          ${{ steps.strings-windows.outputs.qt-dir }}/bin/windeployqt `
-            --verbose 1 `
-            --compiler-runtime `
-            --no-translations `
-            --no-system-d3d-compiler `
-            --no-opengl-sw `
-            ${{ steps.strings-windows.outputs.installer-data-dir }}/nfc-lab.exe
 
-          # create portable package
+      - name: Create portable package
+        shell: powershell
+        run: |
           Compress-Archive `
             -Path ${{ steps.strings-windows.outputs.installer-data-dir }}/* `
             -DestinationPath ${{ github.workspace }}/nfc-lab-${{ steps.strings-windows.outputs.build-version }}-x86_64-portable.zip
 
-          # create installer
-          makensis ${{ steps.strings-windows.outputs.installer-meta-dir }}/script.nsi
+      - name: Create NSIS installer
+        shell: msys2 {0}
+        run: |
+          INSTALLER_META=$(cygpath "${{ steps.strings-windows.outputs.installer-meta-dir }}")
+          /ucrt64/bin/makensis.exe "$INSTALLER_META/script.nsi"
 
-      - name: 'Upload artifact'
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-artifact
@@ -232,7 +265,7 @@ jobs:
           name: windows-artifact
           path: ./release
 
-      - name: 'Create release (Tag)'
+      - name: Create release (Tag)
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         id: create-release-tag
@@ -247,7 +280,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 'Create release (Snapshot)'
+      - name: Create release (Snapshot)
         if: github.ref_name == 'master' || github.ref_name == 'develop'
         uses: softprops/action-gh-release@v2
         id: create-release-snapshot
@@ -271,7 +304,7 @@ jobs:
 #    if: github.ref_type == 'tag'
     if: false
     steps:
-      - name: 'WinGet Releaser'
+      - name: WinGet Releaser
         uses: vedantmgoyal9/winget-releaser@v2
         with:
           identifier: josevcm.nfc-lab

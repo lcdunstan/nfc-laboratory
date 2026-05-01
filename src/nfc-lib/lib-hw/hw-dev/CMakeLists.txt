@@ -11,5 +11,6 @@ add_library(hw-dev STATIC
 
 target_include_directories(hw-dev PUBLIC ${PUBLIC_INCLUDE_DIR})
 target_include_directories(hw-dev PRIVATE ${PRIVATE_SOURCE_DIR})
+target_include_directories(hw-dev PRIVATE ${LIBUSB_INCLUDE_DIRS})
 
-target_link_libraries(hw-dev rt-lang ${LIBUSB_LIBRARY})
+target_link_libraries(hw-dev rt-lang ${LIBUSB_LIBRARIES})
