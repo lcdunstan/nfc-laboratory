@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package nfc;
+
+service SignalCapture {
+  rpc Start (StartRequest) returns (StartResponse);
+  rpc Stop  (StopRequest)  returns (StopResponse);
+}
+
+message StartRequest {}
+
+message StartResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message StopRequest {}
+
+message StopResponse {
+  bool   success = 1;
+  string message = 2;
+}
