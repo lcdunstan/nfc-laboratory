@@ -22,6 +22,9 @@
 #ifndef APP_DECODECONTROLEVENT_H
 #define APP_DECODECONTROLEVENT_H
 
+#include <future>
+#include <memory>
+
 #include <QEvent>
 #include <QMap>
 #include <QVariant>
@@ -48,6 +51,15 @@ class DecoderControlEvent : public QEvent
          RadioDecoderConfig,
          FourierConfig,
       };
+
+      struct Result
+      {
+         bool    success;
+         QString message;
+         int     state; // 0=unknown, 1=idle, 2=running, 3=paused
+      };
+
+      std::shared_ptr<std::promise<Result>> completion;
 
    public:
 
