@@ -28,6 +28,7 @@
 #include <QSplashScreen>
 #include <QStandardPaths>
 #include <QJsonObject>
+#include <QJsonDocument>
 #include <QJsonArray>
 
 #include "QtCache.h"
