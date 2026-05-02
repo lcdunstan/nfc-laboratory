@@ -40,6 +40,8 @@ class GrpcControl : public LabRemote::Service
 
       grpc::Status Resume(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp) override;
 
+      grpc::Status Subscribe(grpc::ServerContext *ctx, const SubscribeRequest *req, grpc::ServerWriter<EventNotification> *writer) override;
+
    private:
 
       grpc::Status execute(int command, ControlResponse *resp);

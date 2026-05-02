@@ -1,11 +1,14 @@
 syntax = "proto3";
 
 service LabRemote {
-  rpc Start  (ControlRequest) returns (ControlResponse);
-  rpc Stop   (ControlRequest) returns (ControlResponse);
-  rpc Pause  (ControlRequest) returns (ControlResponse);
-  rpc Resume (ControlRequest) returns (ControlResponse);
+  rpc Start     (ControlRequest)   returns (ControlResponse);
+  rpc Stop      (ControlRequest)   returns (ControlResponse);
+  rpc Pause     (ControlRequest)   returns (ControlResponse);
+  rpc Resume    (ControlRequest)   returns (ControlResponse);
+  rpc Subscribe (SubscribeRequest) returns (stream EventNotification);
 }
+
+// ── Control RPCs ─────────────────────────────────────────────────────────────
 
 message ControlRequest {}
 
@@ -15,9 +18,54 @@ message ControlResponse {
   State  state   = 3;
 }
 
+// ── Subscribe RPC ─────────────────────────────────────────────────────────────
+
+message SubscribeRequest {
+  repeated EventType filter = 1; // empty = subscribe to all event types
+}
+
+message EventNotification {
+  uint64 timestamp = 1;          // epoch milliseconds
+
+  oneof payload {
+    StateEvent  state  = 2;
+    FrameEvent  frame  = 3;
+    DeviceEvent device = 4;
+  }
+}
+
+message StateEvent {
+  State  state   = 1;
+  string message = 2;
+}
+
+message FrameEvent {
+  string tech      = 1;  // NfcA | NfcB | NfcF | NfcV
+  string type      = 2;  // Poll | Listen | CarrierOn | CarrierOff
+  bytes  data      = 3;
+  double timeStart = 4;
+  double timeEnd   = 5;
+  uint32 flags     = 6;
+}
+
+message DeviceEvent {
+  string name    = 1;
+  string type    = 2;  // radio | logic
+  string status  = 3;
+}
+
+// ── Common enums ──────────────────────────────────────────────────────────────
+
 enum State {
   UNKNOWN = 0;
   IDLE    = 1;
   RUNNING = 2;
   PAUSED  = 3;
+}
+
+enum EventType {
+  ALL    = 0;
+  STATE  = 1;
+  FRAME  = 2;
+  DEVICE = 3;
 }

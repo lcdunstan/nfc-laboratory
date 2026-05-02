@@ -22,6 +22,7 @@
 #include <chrono>
 #include <future>
 #include <memory>
+#include <thread>
 
 #include <QDebug>
 
@@ -49,6 +50,23 @@ grpc::Status GrpcControl::Pause(grpc::ServerContext *ctx, const ControlRequest *
 grpc::Status GrpcControl::Resume(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp)
 {
    return execute(DecoderControlEvent::Resume, resp);
+}
+
+grpc::Status GrpcControl::Subscribe(grpc::ServerContext *ctx, const SubscribeRequest *req, grpc::ServerWriter<EventNotification> *writer)
+{
+   qInfo() << "gRPC Subscribe: client connected, filter size:" << req->filter_size();
+
+   // TODO: register writer with the event publishing mechanism so that
+   //       Qt event handlers can push EventNotification messages here.
+
+   while (!ctx->IsCancelled())
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+   // TODO: unregister writer before returning.
+
+   qInfo() << "gRPC Subscribe: client disconnected";
+
+   return grpc::Status::OK;
 }
 
 grpc::Status GrpcControl::execute(const int command, ControlResponse *resp)
