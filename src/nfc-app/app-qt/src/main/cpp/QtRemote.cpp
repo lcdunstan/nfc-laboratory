@@ -22,12 +22,13 @@
 #include <QDebug>
 #include <QSettings>
 
+#ifdef ENABLE_GRPC_REMOTE
 #include <grpcpp/grpcpp.h>
+#include "rpc/GrpcControl.h"
+#endif
 
 #include <events/SystemShutdownEvent.h>
 #include <events/SystemStartupEvent.h>
-
-#include "rpc/GrpcControl.h"
 
 #include "QtRemote.h"
 
@@ -36,13 +37,16 @@ struct QtRemote::Impl
    // configuration
    QSettings settings;
 
+#ifdef ENABLE_GRPC_REMOTE
    std::unique_ptr<GrpcControl> control;
-
    std::unique_ptr<grpc::Server> server;
+#endif
 
    Impl()
    {
+#ifdef ENABLE_GRPC_REMOTE
       control = std::make_unique<GrpcControl>();
+#endif
    }
 
    ~Impl()
@@ -52,6 +56,7 @@ struct QtRemote::Impl
 
    void start()
    {
+#ifdef ENABLE_GRPC_REMOTE
       // start gRPC server if configured
       const int port = settings.value("grpc/port", 0).toInt();
 
@@ -71,16 +76,19 @@ struct QtRemote::Impl
          qInfo() << "gRPC server listening on port" << port;
       else
          qWarning() << "gRPC server failed to start on port" << port;
+#endif
    }
 
    void stop()
    {
+#ifdef ENABLE_GRPC_REMOTE
       if (server)
       {
          qInfo() << "stopping gRPC server";
          server->Shutdown();
          server.reset();
       }
+#endif
    }
 };
 

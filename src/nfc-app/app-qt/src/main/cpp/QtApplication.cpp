@@ -32,8 +32,8 @@
 
 #include "QtCache.h"
 #include "QtControl.h"
-#include "QtRemote.h"
 #include "QtWindow.h"
+#include "QtRemote.h"
 
 #include "features/Caps.h"
 

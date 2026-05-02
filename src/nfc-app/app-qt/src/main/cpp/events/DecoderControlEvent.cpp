@@ -25,32 +25,38 @@
 
 int DecoderControlEvent::Type = registerEventType();
 
-DecoderControlEvent::DecoderControlEvent(int command, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command)
 {
 }
 
-DecoderControlEvent::DecoderControlEvent(int command, QMap<QString, QVariant> parameters, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mParameters(std::move(parameters)), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command, QMap<QString, QVariant> parameters) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mParameters(std::move(parameters))
 {
 }
 
-DecoderControlEvent::DecoderControlEvent(int command, const QString &name, int value, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command, const QString &name, int value) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command)
 {
    mParameters[name] = value;
 }
 
-DecoderControlEvent::DecoderControlEvent(int command, const QString &name, float value, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command, const QString &name, float value) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command)
 {
    mParameters[name] = value;
 }
 
-DecoderControlEvent::DecoderControlEvent(int command, const QString &name, bool value, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command, const QString &name, bool value) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command)
 {
    mParameters[name] = value;
 }
 
-DecoderControlEvent::DecoderControlEvent(int command, const QString &name, const QString &value, std::shared_ptr<std::promise<Result>> promise) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command), mPromise(promise)
+DecoderControlEvent::DecoderControlEvent(int command, const QString &name, const QString &value) : QEvent(static_cast<QEvent::Type>(Type)), mCommand(command)
 {
    mParameters[name] = value;
+}
+
+DecoderControlEvent *DecoderControlEvent::promise(const std::shared_ptr<std::promise<Result>> &promise)
+{
+   mPromise = promise;
+   return this;
 }
 
 void DecoderControlEvent::completion(const Result &result)

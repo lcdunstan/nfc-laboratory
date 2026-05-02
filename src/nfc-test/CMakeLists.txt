@@ -1,4 +1,6 @@
 add_subdirectory(test-dio)
 add_subdirectory(test-sdr)
 add_subdirectory(test-parser)
-add_subdirectory(test-rpc)
+if (ENABLE_GRPC_REMOTE)
+    add_subdirectory(test-rpc)
+endif ()

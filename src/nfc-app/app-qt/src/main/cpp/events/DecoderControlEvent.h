@@ -61,17 +61,19 @@ class DecoderControlEvent : public QEvent
 
    public:
 
-      explicit DecoderControlEvent(int command, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command);
 
-      explicit DecoderControlEvent(int command, QMap<QString, QVariant> parameters, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command, QMap<QString, QVariant> parameters);
 
-      explicit DecoderControlEvent(int command, const QString &name, int value, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command, const QString &name, int value);
 
-      explicit DecoderControlEvent(int command, const QString &name, float value, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command, const QString &name, float value);
 
-      explicit DecoderControlEvent(int command, const QString &name, bool value, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command, const QString &name, bool value);
 
-      explicit DecoderControlEvent(int command, const QString &name, const QString &value, std::shared_ptr<std::promise<Result>> promise = nullptr);
+      explicit DecoderControlEvent(int command, const QString &name, const QString &value);
+
+      DecoderControlEvent *promise(const std::shared_ptr<std::promise<Result>> &promise);
 
       void completion(const Result &result);
 
