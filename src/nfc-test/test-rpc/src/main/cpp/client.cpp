@@ -19,8 +19,12 @@
 
 */
 
+#include <atomic>
+#include <csignal>
+#include <iomanip>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include <grpcpp/grpcpp.h>
@@ -30,6 +34,15 @@
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
+
+// Pointer to the active streaming context so the signal handler can cancel it.
+static std::atomic<ClientContext *> gActiveContext{nullptr};
+
+static void signalHandler(int)
+{
+   if (auto *ctx = gActiveContext.load())
+      ctx->TryCancel();
+}
 
 static const char *stateToString(State state)
 {
@@ -42,9 +55,53 @@ static const char *stateToString(State state)
    }
 }
 
+static std::string toHex(const std::string &bytes)
+{
+   std::ostringstream oss;
+   for (const unsigned char b : bytes)
+      oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
+   return oss.str();
+}
+
+static void printNotification(const EventNotification &n)
+{
+   std::cout << "[event] ts=" << n.timestamp();
+
+   switch (n.payload_case())
+   {
+      case EventNotification::kState:
+         std::cout << " type=state"
+                   << " state="   << stateToString(n.state().state())
+                   << " message=\"" << n.state().message() << "\"";
+         break;
+
+      case EventNotification::kFrame:
+         std::cout << " type=frame"
+                   << " tech="  << n.frame().tech()
+                   << " kind="  << n.frame().type()
+                   << " data="  << toHex(n.frame().data())
+                   << " time=[" << n.frame().timestart() << "," << n.frame().timeend() << "]"
+                   << " flags=" << n.frame().flags();
+         break;
+
+      case EventNotification::kDevice:
+         std::cout << " type=device"
+                   << " name="   << n.device().name()
+                   << " kind="   << n.device().type()
+                   << " status=" << n.device().status();
+         break;
+
+      default:
+         std::cout << " type=unknown";
+   }
+
+   std::cout << std::endl;
+}
+
 class RemoteControlClient
 {
 public:
+
    explicit RemoteControlClient(std::shared_ptr<Channel> channel)
       : stub(LabRemote::NewStub(channel))
    {
@@ -86,18 +143,82 @@ public:
       return response.success();
    }
 
+   // filter: comma-separated types (state,frame,device) or empty for all
+   bool subscribe(const std::string &filter)
+   {
+      SubscribeRequest request;
+      ClientContext context;
+
+      if (!filter.empty())
+      {
+         std::istringstream ss(filter);
+         std::string token;
+
+         while (std::getline(ss, token, ','))
+         {
+            if (token == "state")       request.add_filter(EventType::STATE);
+            else if (token == "frame")  request.add_filter(EventType::FRAME);
+            else if (token == "device") request.add_filter(EventType::DEVICE);
+            else
+            {
+               std::cerr << "[test-rpc-client] unknown filter type: " << token << std::endl;
+               return false;
+            }
+         }
+      }
+
+      gActiveContext.store(&context);
+
+      const auto reader = stub->Subscribe(&context, request);
+
+      std::cout << "[test-rpc-client] subscribed"
+                << (filter.empty() ? "" : " filter=" + filter)
+                << ", waiting for events (Ctrl+C to stop)..."
+                << std::endl;
+
+      EventNotification notification;
+
+      while (reader->Read(&notification))
+         printNotification(notification);
+
+      gActiveContext.store(nullptr);
+
+      const Status status = reader->Finish();
+
+      if (status.error_code() == grpc::StatusCode::CANCELLED)
+      {
+         std::cout << "[test-rpc-client] subscription cancelled" << std::endl;
+         return true;
+      }
+
+      if (!status.ok())
+      {
+         std::cerr << "[test-rpc-client] subscribe ended with error: " << status.error_message() << std::endl;
+         return false;
+      }
+
+      std::cout << "[test-rpc-client] subscription ended" << std::endl;
+      return true;
+   }
+
 private:
+
    std::unique_ptr<LabRemote::Stub> stub;
 };
 
 void printUsage(const char *name)
 {
    std::cout << "Usage: " << name << " [host:port] <command>" << std::endl;
-   std::cout << "  host:port  server address (default: localhost:50051)" << std::endl;
-   std::cout << "  start      start capture" << std::endl;
-   std::cout << "  stop       stop capture" << std::endl;
-   std::cout << "  pause      pause capture" << std::endl;
-   std::cout << "  resume     resume capture" << std::endl;
+   std::cout << "  host:port              server address (default: localhost:50051)" << std::endl;
+   std::cout << "  start                  start capture" << std::endl;
+   std::cout << "  stop                   stop capture" << std::endl;
+   std::cout << "  pause                  pause capture" << std::endl;
+   std::cout << "  resume                 resume capture" << std::endl;
+   std::cout << "  subscribe              subscribe to all events (Ctrl+C to stop)" << std::endl;
+   std::cout << "  subscribe:state        subscribe to state change events only" << std::endl;
+   std::cout << "  subscribe:frame        subscribe to NFC frame events only" << std::endl;
+   std::cout << "  subscribe:device       subscribe to device status events only" << std::endl;
+   std::cout << "  subscribe:state,frame  subscribe to multiple event types" << std::endl;
 }
 
 int main(int argc, char *argv[])
@@ -105,6 +226,9 @@ int main(int argc, char *argv[])
    std::cout << "***********************************************************************" << std::endl;
    std::cout << "NFC laboratory, 2024 Jose Vicente Campos Martinez - <josevcm@gmail.com>" << std::endl;
    std::cout << "***********************************************************************" << std::endl;
+
+   std::signal(SIGINT,  signalHandler);
+   std::signal(SIGTERM, signalHandler);
 
    std::string address = "localhost:50051";
    std::string command;
@@ -118,7 +242,8 @@ int main(int argc, char *argv[])
          printUsage(argv[0]);
          return 0;
       }
-      else if (arg == "start" || arg == "stop" || arg == "pause" || arg == "resume")
+      else if (arg == "start" || arg == "stop" || arg == "pause" || arg == "resume"
+               || arg.rfind("subscribe", 0) == 0)
       {
          command = arg;
       }
@@ -137,6 +262,13 @@ int main(int argc, char *argv[])
    RemoteControlClient client(grpc::CreateChannel(address, grpc::InsecureChannelCredentials()));
 
    std::cout << "[test-rpc-client] connecting to " << address << std::endl;
+
+   if (command.rfind("subscribe", 0) == 0)
+   {
+      // extract optional filter after "subscribe:" (9 chars + 1 colon = 10)
+      const std::string filter = command.size() > 10 ? command.substr(10) : "";
+      return client.subscribe(filter) ? 0 : 1;
+   }
 
    return client.execute(command) ? 0 : 1;
 }
