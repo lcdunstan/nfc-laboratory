@@ -46,7 +46,7 @@ class RemoteControlClient
 {
 public:
    explicit RemoteControlClient(std::shared_ptr<Channel> channel)
-      : stub(RemoteControl::NewStub(channel))
+      : stub(LabRemote::NewStub(channel))
    {
    }
 
@@ -87,7 +87,7 @@ public:
    }
 
 private:
-   std::unique_ptr<RemoteControl::Stub> stub;
+   std::unique_ptr<LabRemote::Stub> stub;
 };
 
 void printUsage(const char *name)

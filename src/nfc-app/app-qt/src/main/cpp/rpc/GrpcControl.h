@@ -28,7 +28,7 @@
 
 class QObject;
 
-class GrpcControl : public RemoteControl::Service
+class GrpcControl : public LabRemote::Service
 {
    public:
 

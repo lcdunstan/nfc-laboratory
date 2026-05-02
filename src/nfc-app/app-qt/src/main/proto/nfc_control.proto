@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-service RemoteControl {
+service LabRemote {
   rpc Start  (ControlRequest) returns (ControlResponse);
   rpc Stop   (ControlRequest) returns (ControlResponse);
   rpc Pause  (ControlRequest) returns (ControlResponse);
