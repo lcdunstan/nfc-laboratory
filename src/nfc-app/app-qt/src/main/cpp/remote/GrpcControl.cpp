@@ -55,9 +55,9 @@ grpc::Status GrpcControl::execute(const int command, ControlResponse *resp)
 {
    const auto promise = std::make_shared<std::promise<DecoderControlEvent::Result>>();
 
-   auto *event = new DecoderControlEvent(command, promise);
+   auto *event = new DecoderControlEvent(command);
 
-   QtApplication::post(event);
+   QtApplication::post(event->promise(promise));
 
    auto future = promise->get_future();
 

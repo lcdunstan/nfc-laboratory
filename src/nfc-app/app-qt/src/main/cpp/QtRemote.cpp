@@ -24,7 +24,7 @@
 
 #ifdef ENABLE_GRPC_REMOTE
 #include <grpcpp/grpcpp.h>
-#include "rpc/GrpcControl.h"
+#include "remote/GrpcControl.h"
 #endif
 
 #include <events/SystemShutdownEvent.h>
