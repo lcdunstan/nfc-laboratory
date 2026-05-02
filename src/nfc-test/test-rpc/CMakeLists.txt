@@ -31,14 +31,14 @@ if (WIN32)
     set(PLATFORM_LIBS mingw32 psapi)
 endif ()
 
-add_library(nfc-control-proto STATIC
+add_library(nfc-control-proto-client STATIC
         ${PROTO_GEN_DIR}/nfc_control.pb.cc
         ${PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
 )
 
-target_include_directories(nfc-control-proto PUBLIC ${PROTO_GEN_DIR})
+target_include_directories(nfc-control-proto-client PUBLIC ${PROTO_GEN_DIR})
 
-target_link_libraries(nfc-control-proto
+target_link_libraries(nfc-control-proto-client
         gRPC::grpc++
         protobuf::libprotobuf
 )
@@ -51,5 +51,5 @@ target_include_directories(test-rpc PRIVATE ${PRIVATE_SOURCE_DIR})
 
 target_link_libraries(test-rpc
         ${PLATFORM_LIBS}
-        nfc-control-proto
+        nfc-control-proto-client
 )
