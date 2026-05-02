@@ -32,8 +32,6 @@ class GrpcControl : public RemoteControl::Service
 {
    public:
 
-      explicit GrpcControl(QObject *target);
-
       grpc::Status Start(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp) override;
 
       grpc::Status Stop(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp) override;
@@ -45,8 +43,6 @@ class GrpcControl : public RemoteControl::Service
    private:
 
       grpc::Status execute(int command, ControlResponse *resp);
-
-      QObject *mTarget;
 };
 
 #endif //APP_GRPCCONTROL_H

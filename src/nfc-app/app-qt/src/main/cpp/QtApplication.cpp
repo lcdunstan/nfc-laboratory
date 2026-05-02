@@ -27,12 +27,12 @@
 #include <QThreadPool>
 #include <QSplashScreen>
 #include <QStandardPaths>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
 
 #include "QtCache.h"
 #include "QtControl.h"
+#include "QtRemote.h"
 #include "QtWindow.h"
 
 #include "features/Caps.h"
@@ -43,8 +43,6 @@
 #include "events/SystemStartupEvent.h"
 #include "events/SystemShutdownEvent.h"
 #include "events/DecoderControlEvent.h"
-
-#include "rpc/GrpcServer.h"
 
 #include "QtApplication.h"
 
@@ -65,6 +63,9 @@ struct QtApplication::Impl
    // interface control
    QPointer<QtWindow> window;
 
+   // remote control
+   QPointer<QtRemote> remote;
+
    // splash screen
    QSplashScreen splash;
 
@@ -78,9 +79,6 @@ struct QtApplication::Impl
 
    // print frames flag
    bool printFramesEnabled = false;
-
-   // gRPC server
-   std::unique_ptr<GrpcServer> grpcServer;
 
    //  shutdown flag
    static bool shuttingDown;
@@ -96,6 +94,9 @@ struct QtApplication::Impl
       // create decoder control interface
       control = new QtControl(cache);
 
+      // create remote control interface
+      remote = new QtRemote();
+
       // create user interface window
       window = new QtWindow(cache);
 
@@ -107,15 +108,6 @@ struct QtApplication::Impl
 
       // connect reload signal
       windowReloadConnection = connect(window, &QtWindow::reload, [=] { reload(); });
-
-      // start gRPC server if configured
-      const int grpcPort = settings.value("grpc/port", 0).toInt();
-
-      if (grpcPort > 0)
-      {
-         grpcServer = std::make_unique<GrpcServer>(grpcPort, app);
-         grpcServer->start();
-      }
    }
 
    ~Impl()
@@ -190,9 +182,6 @@ struct QtApplication::Impl
    {
       qInfo() << "shutdown QT Interface";
 
-      if (grpcServer)
-         grpcServer->stop();
-
       postEvent(instance(), new SystemShutdownEvent);
 
       shuttingDown = true;
@@ -252,6 +241,7 @@ struct QtApplication::Impl
    {
       window->handleEvent(event);
       control->handleEvent(event);
+      remote->handleEvent(event);
 
       if (printFramesEnabled && event->type() == StreamFrameEvent::Type)
       {

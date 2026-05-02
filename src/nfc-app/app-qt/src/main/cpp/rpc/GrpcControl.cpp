@@ -24,15 +24,12 @@
 #include <memory>
 
 #include <QDebug>
-#include <QCoreApplication>
 
 #include <events/DecoderControlEvent.h>
 
 #include "GrpcControl.h"
 
-GrpcControl::GrpcControl(QObject *target) : mTarget(target)
-{
-}
+#include "QtApplication.h"
 
 grpc::Status GrpcControl::Start(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp)
 {
@@ -54,28 +51,31 @@ grpc::Status GrpcControl::Resume(grpc::ServerContext *ctx, const ControlRequest 
    return execute(DecoderControlEvent::Resume, resp);
 }
 
-grpc::Status GrpcControl::execute(int command, ControlResponse *resp)
+grpc::Status GrpcControl::execute(const int command, ControlResponse *resp)
 {
-   std::promise<DecoderControlEvent::Result> promise;
-   auto future = promise.get_future();
+   const auto promise = std::make_shared<std::promise<DecoderControlEvent::Result>>();
 
-   auto *event = new DecoderControlEvent(command);
-   event->completion = std::make_shared<std::promise<DecoderControlEvent::Result>>(std::move(promise));
+   auto *event = new DecoderControlEvent(command, promise);
 
-   QCoreApplication::postEvent(mTarget, event);
+   QtApplication::post(event);
+
+   auto future = promise->get_future();
 
    if (future.wait_for(std::chrono::seconds(5)) == std::future_status::timeout)
    {
       qWarning() << "gRPC command" << command << "timed out after 5 seconds";
+
       resp->set_success(false);
       resp->set_message("timeout");
-      resp->set_state(State::UNKNOWN);
+      resp->set_state(UNKNOWN);
       return grpc::Status::OK;
    }
 
-   auto result = future.get();
-   resp->set_success(result.success);
-   resp->set_message(result.message.toStdString());
-   resp->set_state(static_cast<State>(result.state));
+   auto [success, message, state] = future.get();
+
+   resp->set_success(success);
+   resp->set_message(message.toStdString());
+   resp->set_state(static_cast<State>(state));
+
    return grpc::Status::OK;
 }

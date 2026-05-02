@@ -54,26 +54,26 @@ class DecoderControlEvent : public QEvent
 
       struct Result
       {
-         bool    success;
+         bool success;
          QString message;
-         int     state; // 0=unknown, 1=idle, 2=running, 3=paused
+         int state;
       };
-
-      std::shared_ptr<std::promise<Result>> completion;
 
    public:
 
-      explicit DecoderControlEvent(int command);
+      explicit DecoderControlEvent(int command, std::shared_ptr<std::promise<Result>> promise = nullptr);
 
-      explicit DecoderControlEvent(int command, QMap<QString, QVariant> parameters);
+      explicit DecoderControlEvent(int command, QMap<QString, QVariant> parameters, std::shared_ptr<std::promise<Result>> promise = nullptr);
 
-      explicit DecoderControlEvent(int command, const QString &name, int value);
+      explicit DecoderControlEvent(int command, const QString &name, int value, std::shared_ptr<std::promise<Result>> promise = nullptr);
 
-      explicit DecoderControlEvent(int command, const QString &name, float value);
+      explicit DecoderControlEvent(int command, const QString &name, float value, std::shared_ptr<std::promise<Result>> promise = nullptr);
 
-      explicit DecoderControlEvent(int command, const QString &name, bool value);
+      explicit DecoderControlEvent(int command, const QString &name, bool value, std::shared_ptr<std::promise<Result>> promise = nullptr);
 
-      explicit DecoderControlEvent(int command, const QString &name, const QString &value);
+      explicit DecoderControlEvent(int command, const QString &name, const QString &value, std::shared_ptr<std::promise<Result>> promise = nullptr);
+
+      void completion(const Result &result);
 
       int command() const;
 
@@ -104,6 +104,8 @@ class DecoderControlEvent : public QEvent
    private:
 
       int mCommand;
+
+      std::shared_ptr<std::promise<Result>> mPromise;
 
       QMap<QString, QVariant> mParameters;
 };

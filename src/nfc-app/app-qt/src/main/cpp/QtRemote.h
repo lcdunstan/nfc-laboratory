@@ -19,37 +19,27 @@
 
 */
 
-#ifndef APP_GRPCSERVER_H
-#define APP_GRPCSERVER_H
+#ifndef APP_QTREMOTE_H
+#define APP_QTREMOTE_H
 
-#include <memory>
+#include <QObject>
+#include <QSharedPointer>
 
-class QObject;
-class GrpcControl;
-
-namespace grpc { class Server; }
-
-class GrpcServer
+class QtRemote : public QObject
 {
+   struct Impl;
+
+      Q_OBJECT
+
    public:
 
-      GrpcServer(int port, QObject *target);
+      QtRemote();
 
-      ~GrpcServer();
-
-      void start();
-
-      void stop();
+      void handleEvent(QEvent *event) const;
 
    private:
 
-      int mPort;
-
-      QObject *mTarget;
-
-      std::unique_ptr<GrpcControl> mService;
-
-      std::unique_ptr<grpc::Server> mServer;
+      QSharedPointer<Impl> impl;
 };
 
-#endif //APP_GRPCSERVER_H
+#endif //APP_QTREMOTE_H

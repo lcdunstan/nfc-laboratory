@@ -23,7 +23,6 @@
 #define APP_QTCONTROL_H
 
 #include <QObject>
-#include <QSettings>
 #include <QSharedPointer>
 
 class QtCache;
