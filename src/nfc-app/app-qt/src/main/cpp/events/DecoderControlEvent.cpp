@@ -59,10 +59,14 @@ DecoderControlEvent *DecoderControlEvent::promise(const std::shared_ptr<std::pro
    return this;
 }
 
-void DecoderControlEvent::completion(const Result &result)
+std::function<void(const DecoderControlEvent::Result &)> DecoderControlEvent::notifier() const
 {
-   if (mPromise)
-      mPromise->set_value(result);
+   auto promise = mPromise;
+
+   return [promise](const Result &r) {
+      if (promise)
+         promise->set_value(r);
+   };
 }
 
 int DecoderControlEvent::command() const

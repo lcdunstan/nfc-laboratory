@@ -408,6 +408,10 @@ struct QtControl::Impl
    {
       qInfo() << "start decoder and receiver tasks";
 
+      // Extract the notifier before async lambdas: Qt deletes the event after
+      // customEvent() returns, so capturing event* in a lambda is use-after-free.
+      auto notify = event->notifier();
+
       // if event contains file name and sample rate start recorder
       if (event->contains("storagePath"))
       {
@@ -422,8 +426,8 @@ struct QtControl::Impl
                // ...start logic and radio devices
                startDecoders();
 
-               // notify completion to future
-               event->completion({true, "running", 2});
+               // notify completion to event source
+               notify({true, "running", 2});
             });
          });
       }
@@ -437,9 +441,9 @@ struct QtControl::Impl
             // ...start logic and radio devices
             startDecoders();
 
-            // notify completion to future
-            event->completion({true, "running", 2});
-      });
+            // notify completion to event source
+            notify({true, "running", 2});
+         });
       }
    }
 
@@ -449,6 +453,8 @@ struct QtControl::Impl
    void doStopDecode(DecoderControlEvent *event) const
    {
       qInfo() << "stop decoder and receiver tasks";
+
+      const auto notify = event->notifier();
 
       // stop radio receiver task
       if (!logicDeviceType.isEmpty())
@@ -462,8 +468,8 @@ struct QtControl::Impl
       if (!storagePath.isEmpty())
          taskRecorderStop();
 
-      // notify completion to future
-      event->completion({true, "stopped", 1});
+      // notify completion to event source
+      notify({true, "stopped", 1});
    }
 
    /*
@@ -473,6 +479,8 @@ struct QtControl::Impl
    {
       qInfo() << "pause decoder and receiver tasks";
 
+      const auto notify = event->notifier();
+
       // stop radio receiver task
       if (!logicDeviceType.isEmpty())
          taskLogicDevicePause();
@@ -481,8 +489,8 @@ struct QtControl::Impl
       if (!radioDeviceType.isEmpty())
          taskRadioDevicePause();
 
-      // notify completion to future
-      event->completion({true, "paused", 3});
+      // notify completion to event source
+      notify({true, "paused", 3});
    }
 
    /*
@@ -492,6 +500,8 @@ struct QtControl::Impl
    {
       qInfo() << "resume decoder and receiver tasks";
 
+      const auto notify = event->notifier();
+
       // stop radio receiver task
       if (!logicDeviceType.isEmpty())
          taskLogicDeviceResume();
@@ -500,8 +510,8 @@ struct QtControl::Impl
       if (!radioDeviceType.isEmpty())
          taskRadioDeviceResume();
 
-      // notify completion to future
-      event->completion({true, "running", 2});
+      // notify completion to event source
+      notify({true, "running", 2});
    }
 
    /*

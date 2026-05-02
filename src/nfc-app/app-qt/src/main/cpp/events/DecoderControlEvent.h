@@ -22,6 +22,7 @@
 #ifndef APP_DECODECONTROLEVENT_H
 #define APP_DECODECONTROLEVENT_H
 
+#include <functional>
 #include <future>
 #include <memory>
 
@@ -75,7 +76,7 @@ class DecoderControlEvent : public QEvent
 
       DecoderControlEvent *promise(const std::shared_ptr<std::promise<Result>> &promise);
 
-      void completion(const Result &result);
+      std::function<void(const Result &)> notifier() const;
 
       int command() const;
 
@@ -107,7 +108,7 @@ class DecoderControlEvent : public QEvent
 
       int mCommand;
 
-      std::shared_ptr<std::promise<Result>> mPromise;
+      std::shared_ptr<std::promise<Result>> mPromise = nullptr;
 
       QMap<QString, QVariant> mParameters;
 };
