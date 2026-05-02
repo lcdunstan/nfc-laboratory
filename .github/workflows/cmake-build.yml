@@ -151,7 +151,7 @@ jobs:
           export CMAKE_PREFIX_PATH=/ucrt64
           
           cmake -S . -B build -G Ninja \
-            -DENABLE_GRPC_REMOTE \
+            -DENABLE_GRPC_REMOTE=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH=/ucrt64 \
             -DCMAKE_FIND_ROOT_PATH=/ucrt64 \
