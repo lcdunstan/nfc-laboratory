@@ -22,6 +22,12 @@
 #ifndef APP_GRPCCONTROL_H
 #define APP_GRPCCONTROL_H
 
+#include <condition_variable>
+#include <deque>
+#include <memory>
+#include <mutex>
+#include <vector>
+
 #include <grpcpp/grpcpp.h>
 
 #include "nfc_control.grpc.pb.h"
@@ -30,6 +36,16 @@ class QObject;
 
 class GrpcControl : public LabRemote::Service
 {
+   private:
+
+      struct Subscription
+      {
+         std::mutex mutex;
+         grpc::ServerWriter<EventNotification> *writer;
+         std::condition_variable cv;
+         std::deque<EventNotification> queue;
+      };
+
    public:
 
       grpc::Status Start(grpc::ServerContext *ctx, const ControlRequest *req, ControlResponse *resp) override;
@@ -42,9 +58,14 @@ class GrpcControl : public LabRemote::Service
 
       grpc::Status Subscribe(grpc::ServerContext *ctx, const SubscribeRequest *req, grpc::ServerWriter<EventNotification> *writer) override;
 
+      void publish(const EventNotification &notification);
+
    private:
 
-      grpc::Status execute(int command, ControlResponse *resp);
+      static grpc::Status execute(int command, ControlResponse *resp);
+
+      std::mutex subscribersMutex;
+      std::vector<std::shared_ptr<Subscription>> subscribers;
 };
 
 #endif //APP_GRPCCONTROL_H

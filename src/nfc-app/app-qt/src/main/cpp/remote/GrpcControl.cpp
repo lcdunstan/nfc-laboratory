@@ -19,6 +19,7 @@
 
 */
 
+#include <algorithm>
 #include <chrono>
 #include <future>
 #include <memory>
@@ -56,17 +57,52 @@ grpc::Status GrpcControl::Subscribe(grpc::ServerContext *ctx, const SubscribeReq
 {
    qInfo() << "gRPC Subscribe: client connected, filter size:" << req->filter_size();
 
-   // TODO: register writer with the event publishing mechanism so that
-   //       Qt event handlers can push EventNotification messages here.
+   auto sub = std::make_shared<Subscription>();
+   sub->writer = writer;
+
+   {
+      std::lock_guard lock(subscribersMutex);
+      subscribers.push_back(sub);
+   }
 
    while (!ctx->IsCancelled())
-      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+   {
+      std::deque<EventNotification> batch;
 
-   // TODO: unregister writer before returning.
+      {
+         std::unique_lock lock(sub->mutex);
+
+         sub->cv.wait_for(lock, std::chrono::milliseconds(50), [&] {
+            return !sub->queue.empty() || ctx->IsCancelled();
+         });
+
+         std::swap(batch, sub->queue);
+      }
+
+      for (const auto &notification : batch)
+         writer->Write(notification);
+   }
+
+   {
+      std::lock_guard lock(subscribersMutex);
+      subscribers.erase(std::remove(subscribers.begin(), subscribers.end(), sub), subscribers.end());
+   }
 
    qInfo() << "gRPC Subscribe: client disconnected";
 
    return grpc::Status::OK;
+}
+
+void GrpcControl::publish(const EventNotification &notification)
+{
+   std::lock_guard lock(subscribersMutex);
+
+   for (const auto &sub : subscribers)
+   {
+      std::lock_guard subLock(sub->mutex);
+      sub->queue.push_back(notification);
+      sub->cv.notify_one();
+   }
 }
 
 grpc::Status GrpcControl::execute(const int command, ControlResponse *resp)

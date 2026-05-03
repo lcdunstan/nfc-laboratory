@@ -13,7 +13,10 @@ endif()
 
 project(nfc-lab VERSION "${BUILD_PROJECT_VERSION}" LANGUAGES C CXX)
 
-option(ENABLE_GRPC_REMOTE "Enable gRPC remote control service (requires gRPC and protobuf)" OFF)
+#-------------------------------------------------------------------------------
+# customization options
+#-------------------------------------------------------------------------------
+option(ENABLE_GRPC_API "Enable gRPC remote control service (requires gRPC and protobuf)" OFF)
 
 #-------------------------------------------------------------------------------
 # build flags

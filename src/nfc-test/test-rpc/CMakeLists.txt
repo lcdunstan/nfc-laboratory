@@ -3,27 +3,27 @@ set(CMAKE_CXX_STANDARD 17)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
 
-set(PRIVATE_SOURCE_DIR   ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp)
-set(PROTO_GEN_DIR        ${CMAKE_CURRENT_BINARY_DIR})
-set(CONTROL_PROTO_DIR    ${CMAKE_SOURCE_DIR}/src/nfc-app/app-qt/src/main/proto)
-set(CONTROL_PROTO_FILE   ${CONTROL_PROTO_DIR}/nfc_control.proto)
+set(PRIVATE_SOURCE_DIR      ${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp)
+set(CONTROL_PROTO_GEN_DIR   ${CMAKE_CURRENT_BINARY_DIR})
+set(CONTROL_PROTO_API_DIR   ${CMAKE_SOURCE_DIR}/src/nfc-app/app-qt/src/main/api/proto)
+set(CONTROL_PROTO_API_FILE  ${CONTROL_PROTO_API_DIR}/nfc_control.proto)
 
 get_target_property(GRPC_CPP_PLUGIN gRPC::grpc_cpp_plugin LOCATION)
 
 add_custom_command(
         OUTPUT
-            ${PROTO_GEN_DIR}/nfc_control.pb.cc
-            ${PROTO_GEN_DIR}/nfc_control.pb.h
-            ${PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
-            ${PROTO_GEN_DIR}/nfc_control.grpc.pb.h
+            ${CONTROL_PROTO_GEN_DIR}/nfc_control.pb.cc
+            ${CONTROL_PROTO_GEN_DIR}/nfc_control.pb.h
+            ${CONTROL_PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
+            ${CONTROL_PROTO_GEN_DIR}/nfc_control.grpc.pb.h
         COMMAND $<TARGET_FILE:protobuf::protoc>
         ARGS
-            --grpc_out=${PROTO_GEN_DIR}
-            --cpp_out=${PROTO_GEN_DIR}
+            --grpc_out=${CONTROL_PROTO_GEN_DIR}
+            --cpp_out=${CONTROL_PROTO_GEN_DIR}
             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
-            -I${CONTROL_PROTO_DIR}
-            ${CONTROL_PROTO_FILE}
-        DEPENDS ${CONTROL_PROTO_FILE}
+            -I${CONTROL_PROTO_API_DIR}
+            ${CONTROL_PROTO_API_FILE}
+        DEPENDS ${CONTROL_PROTO_API_FILE}
         COMMENT "Generating gRPC/protobuf stubs from nfc_control.proto"
 )
 
@@ -32,11 +32,11 @@ if (WIN32)
 endif ()
 
 add_library(nfc-control-proto-client STATIC
-        ${PROTO_GEN_DIR}/nfc_control.pb.cc
-        ${PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
+        ${CONTROL_PROTO_GEN_DIR}/nfc_control.pb.cc
+        ${CONTROL_PROTO_GEN_DIR}/nfc_control.grpc.pb.cc
 )
 
-target_include_directories(nfc-control-proto-client PUBLIC ${PROTO_GEN_DIR})
+target_include_directories(nfc-control-proto-client PUBLIC ${CONTROL_PROTO_GEN_DIR})
 
 target_link_libraries(nfc-control-proto-client
         gRPC::grpc++

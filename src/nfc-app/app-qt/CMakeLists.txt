@@ -1,12 +1,12 @@
 set(CMAKE_CXX_STANDARD 17)
 
-if (ENABLE_GRPC_REMOTE)
+if (ENABLE_GRPC_API)
     find_package(gRPC CONFIG REQUIRED)
     find_package(Protobuf CONFIG REQUIRED)
 
-    set(PROTO_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/main/proto)
-    set(PROTO_FILE ${PROTO_DIR}/nfc_control.proto)
     set(PROTO_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR})
+    set(PROTO_API_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src/main/api/proto)
+    set(PROTO_API_FILE ${PROTO_API_DIR}/nfc_control.proto)
 
     get_target_property(GRPC_CPP_PLUGIN gRPC::grpc_cpp_plugin LOCATION)
 
@@ -21,9 +21,9 @@ if (ENABLE_GRPC_REMOTE)
             --grpc_out=${PROTO_GEN_DIR}
             --cpp_out=${PROTO_GEN_DIR}
             --plugin=protoc-gen-grpc=${GRPC_CPP_PLUGIN}
-            -I${PROTO_DIR}
-            ${PROTO_FILE}
-            DEPENDS ${PROTO_FILE}
+            -I${PROTO_API_DIR}
+            ${PROTO_API_FILE}
+            DEPENDS ${PROTO_API_FILE}
             COMMENT "Generating gRPC/protobuf stubs from nfc_control.proto"
     )
 
@@ -38,7 +38,7 @@ if (ENABLE_GRPC_REMOTE)
 
     message(STATUS "gRPC remote control: ENABLED")
 else ()
-    message(STATUS "gRPC remote control: DISABLED (use -DENABLE_GRPC_REMOTE=ON to enable)")
+    message(STATUS "gRPC remote control: DISABLED (use -DENABLE_GRPC_API=ON to enable)")
 endif ()
 
 set(CMAKE_AUTOMOC ON)
@@ -135,7 +135,7 @@ set(SOURCES
         ${PRIVATE_ASSETS_DIR}/app/app.qrc
 )
 
-if (ENABLE_GRPC_REMOTE)
+if (ENABLE_GRPC_API)
     list(APPEND SOURCES ${PRIVATE_SOURCE_DIR}/remote/GrpcControl.cpp)
 endif ()
 
@@ -176,8 +176,8 @@ target_link_libraries(nfc-lab
         Qt6::PrintSupport
 )
 
-if (ENABLE_GRPC_REMOTE)
-    add_compile_definitions(ENABLE_GRPC_REMOTE)
+if (ENABLE_GRPC_API)
+    add_compile_definitions(ENABLE_GRPC_API)
     target_include_directories(nfc-lab PRIVATE ${PROTO_GEN_DIR})
     target_link_libraries(nfc-lab remote-proto)
 endif ()

@@ -55,11 +55,78 @@ static const char *stateToString(State state)
    }
 }
 
+static const char *techToString(FrameTech tech)
+{
+   switch (tech)
+   {
+      case FrameTech_NfcAnyTech:  return "NFC";
+      case FrameTech_NfcATech:    return "NFC-A";
+      case FrameTech_NfcBTech:    return "NFC-B";
+      case FrameTech_NfcFTech:    return "NFC-F";
+      case FrameTech_NfcVTech:    return "NFC-V";
+      case FrameTech_IsoAnyTech:  return "ISO";
+      case FrameTech_Iso7816Tech: return "ISO-7816";
+      default:                    return "none";
+   }
+}
+
+static const char *frameTypeToString(FrameType type)
+{
+   switch (type)
+   {
+      case FrameType_NfcCarrierOff:    return "carrier-off";
+      case FrameType_NfcCarrierOn:     return "carrier-on";
+      case FrameType_NfcPollFrame:     return "poll";
+      case FrameType_NfcListenFrame:   return "listen";
+      case FrameType_IsoVccLow:        return "vcc-low";
+      case FrameType_IsoVccHigh:       return "vcc-high";
+      case FrameType_IsoRstLow:        return "rst-low";
+      case FrameType_IsoRstHigh:       return "rst-high";
+      case FrameType_IsoATRFrame:      return "atr";
+      case FrameType_IsoRequestFrame:  return "request";
+      case FrameType_IsoResponseFrame: return "response";
+      case FrameType_IsoExchangeFrame: return "exchange";
+      default:                         return "none";
+   }
+}
+
+static std::string flagsToString(uint32_t flags)
+{
+   if (flags == 0)
+      return "none";
+
+   std::string result;
+
+   auto append = [&](const char *name) {
+      if (!result.empty()) result += '|';
+      result += name;
+   };
+
+   if (flags & Flags_Frame_ShortFrame)       append("short");
+   if (flags & Flags_Frame_Encrypted)        append("encrypted");
+   if (flags & Flags_Frame_Truncated)        append("truncated");
+   if (flags & Flags_Frame_ParityError)      append("parity-err");
+   if (flags & Flags_Frame_CrcError)         append("crc-err");
+   if (flags & Flags_Frame_SyncError)        append("sync-err");
+   if (flags & Flags_Protocol_RequestFrame)  append("req");
+   if (flags & Flags_Protocol_ResponseFrame) append("resp");
+   if (flags & Flags_Protocol_SenseFrame)    append("sense");
+   if (flags & Flags_Protocol_SelectionFrame)append("select");
+   if (flags & Flags_Protocol_ApplicationFrame) append("app");
+   if (flags & Flags_Protocol_AuthFrame)     append("auth");
+
+   return result;
+}
+
 static std::string toHex(const std::string &bytes)
 {
    std::ostringstream oss;
-   for (const unsigned char b : bytes)
-      oss << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(b);
+   oss << std::uppercase << std::hex << std::setfill('0');
+   for (size_t i = 0; i < bytes.size(); ++i)
+   {
+      if (i) oss << ' ';
+      oss << std::setw(2) << static_cast<int>(static_cast<unsigned char>(bytes[i]));
+   }
    return oss.str();
 }
 
@@ -71,18 +138,25 @@ static void printNotification(const EventNotification &n)
    {
       case EventNotification::kState:
          std::cout << " type=state"
-                   << " state="   << stateToString(n.state().state())
+                   << " state="     << stateToString(n.state().state())
                    << " message=\"" << n.state().message() << "\"";
          break;
 
       case EventNotification::kFrame:
+      {
+         const FrameEvent &fe = n.frame();
          std::cout << " type=frame"
-                   << " tech="  << n.frame().tech()
-                   << " kind="  << n.frame().type()
-                   << " data="  << toHex(n.frame().data())
-                   << " time=[" << n.frame().timestart() << "," << n.frame().timeend() << "]"
-                   << " flags=" << n.frame().flags();
+                   << " tech="  << techToString(fe.tech())
+                   << " kind="  << frameTypeToString(fe.type())
+                   << " rate="  << fe.rate()
+                   << std::fixed << std::setprecision(6)
+                   << " t0="    << fe.time_start() / 1e6 << "s"
+                   << " t1="    << fe.time_end()   / 1e6 << "s"
+                   << " flags=" << flagsToString(fe.flags())
+                   << " ["      << fe.data().size() << "] "
+                   << toHex(fe.data());
          break;
+      }
 
       case EventNotification::kDevice:
          std::cout << " type=device"
@@ -95,7 +169,7 @@ static void printNotification(const EventNotification &n)
          std::cout << " type=unknown";
    }
 
-   std::cout << std::endl;
+   std::cout << '\n';
 }
 
 class RemoteControlClient
