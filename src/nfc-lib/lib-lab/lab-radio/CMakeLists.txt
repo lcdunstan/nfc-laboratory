@@ -15,4 +15,4 @@ add_library(lab-radio STATIC
 target_include_directories(lab-radio PUBLIC ${PUBLIC_INCLUDE_DIR})
 target_include_directories(lab-radio PRIVATE ${PRIVATE_SOURCE_DIR})
 
-target_link_libraries(lab-radio lab-data rt-lang hw-radio)
+target_link_libraries(lab-radio lab-data rt-lang hw-core)

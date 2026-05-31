@@ -12,4 +12,4 @@ add_library(lab-logic STATIC
 target_include_directories(lab-logic PUBLIC ${PUBLIC_INCLUDE_DIR})
 target_include_directories(lab-logic PRIVATE ${PRIVATE_SOURCE_DIR})
 
-target_link_libraries(lab-logic lab-data rt-lang hw-logic)
+target_link_libraries(lab-logic lab-data rt-lang hw-core)

@@ -185,7 +185,7 @@ int testFile(const std::string &signal)
    size_t pos2 = signal.rfind("/");
 
    if (pos1 == std::string::npos)
-      return -1;
+      return 1;
 
    std::string target = signal.substr(0, pos1) + ".json";
    std::string filename = signal;
@@ -203,7 +203,9 @@ int testFile(const std::string &signal)
       if (readFrames(target, list2))
       {
          // show result
-         std::cout << "TEST FILE " << filename << ": " << (list1 == list2 ? "PASS" : "FAIL") << std::endl;
+         bool pass = list1 == list2;
+         std::cout << "TEST FILE " << filename << ": " << (pass ? "PASS" : "FAIL") << std::endl;
+         return pass ? 0 : 1;
       }
       else
       {
@@ -214,20 +216,22 @@ int testFile(const std::string &signal)
       }
    }
 
-   return 0;
+   return 1;
 }
 
 int testPath(const std::string &path)
 {
+   int failures = 0;
+
    for (const auto &entry: FileSystem::directoryList(path))
    {
       if (entry.name.find(".wav") != std::string::npos)
       {
-         testFile(entry.name);
+         failures += testFile(entry.name);
       }
    }
 
-   return 0;
+   return failures;
 }
 
 void printUsage(const char *programName)
@@ -275,6 +279,9 @@ int main(int argc, char *argv[])
    logger->info("NFC laboratory, 2024 Jose Vicente Campos Martinez - <josevcm@gmail.com>");
    logger->info("***********************************************************************");
 
+#ifdef __EMSCRIPTEN__
+   return testPath("/");
+#else
    if (argc < 2)
    {
       printUsage(argv[0]);
@@ -292,6 +299,8 @@ int main(int argc, char *argv[])
       }
    }
 
+   int failures = 0;
+
    for (int i = 1; i < argc; i++)
    {
       std::string path {argv[i]};
@@ -300,13 +309,13 @@ int main(int argc, char *argv[])
       {
          logger->info("processing path {}", {path});
 
-         testPath(path);
+         failures += testPath(path);
       }
       else if (FileSystem::isRegularFile(path))
       {
          logger->info("processing file {}", {path});
 
-         testFile(path);
+         failures += testFile(path);
       }
       else
       {
@@ -315,5 +324,6 @@ int main(int argc, char *argv[])
       }
    }
 
-   return 0;
+   return failures;
+#endif
 }

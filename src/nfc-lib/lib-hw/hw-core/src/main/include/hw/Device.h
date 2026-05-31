@@ -76,6 +76,11 @@ class Device
          return this->set(id, value, -1);
       }
 
+      virtual rt::Variant get(int id) const
+      {
+         return this->get(id, -1);
+      }
+
       virtual rt::Variant get(int id, int channel) const = 0;
 
       virtual bool set(int id, const rt::Variant &value, int channel) = 0;
