@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NFC Decoder WASM Test</title>
+<style>
+  body { font-family: monospace; padding: 2em; background: #111; color: #0f0; }
+  #status { color: #888; }
+  #result { margin-top: 1em; }
+  .pass { color: #0f0; }
+  .fail { color: #f00; }
+</style>
+</head>
+<body>
+<h1>NFC Decoder WASM Test</h1>
+<div id="status">Loading WASM module...</div>
+<div id="result"></div>
+<script src="./pkg/nfc-decoder-wasm-bin.js"></script>
+<script type="module">
+  import { parseWav } from '../src/wav-parser.ts';
+  import { NfcDecoder } from '../src/decoder.ts';
+
+  const factory = window.NfcDecoderModule;
+
+  window.runDecoder = async function(wavBuffer) {
+    const module = await factory({
+      locateFile: (path) => './pkg/' + path,
+    });
+    const wav = parseWav(wavBuffer);
+    const decoder = new NfcDecoder(module, wav.sampleRate);
+
+    const chunkSize = 65536;
+    for (let i = 0; i < wav.samples.length; i += chunkSize) {
+      const chunk = wav.samples.subarray(i, Math.min(i + chunkSize, wav.samples.length));
+      decoder.feed(chunk);
+    }
+
+    const frames = decoder.pollFrames();
+    decoder.destroy();
+    return frames;
+  };
+
+  document.getElementById('status').textContent = 'WASM module ready.';
+</script>
+</body>
+</html>

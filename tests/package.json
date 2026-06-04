@@ -1,0 +1,8 @@
+{
+  "name": "nfc-rx-web-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  }
+}

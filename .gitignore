@@ -13,3 +13,12 @@ src/nfc-app/app-qt/src/main/cpp/QtConfig.h
 build-dir/
 repo/
 CLAUDE.md
+node_modules/
+test-results/
+*.pcapng
+airspy-rx
+nfc-rx
+/build-em
+pkg/
+*-wasm-bin.js
+*-wasm-bin.wasm

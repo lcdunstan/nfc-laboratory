@@ -15,7 +15,7 @@ if (WIN32)
     set(PLATFORM_LIBS mingw32 psapi)
 endif (WIN32)
 
-target_link_libraries(nfc-rx ${PLATFORM_LIBS} lab-tasks hw-radio rt-lang nlohmann)
+target_link_libraries(nfc-rx ${PLATFORM_LIBS} lab-tasks hw-radio hw-core rt-lang nlohmann)
 
 # Install targets
 if (UNIX)

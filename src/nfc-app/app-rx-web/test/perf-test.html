@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airspy WebUSB Performance Test</title>
+<style>
+  body { font-family: monospace; padding: 2em; background: #111; color: #0f0; }
+  #status { color: #888; white-space: pre; }
+  #result { margin-top: 1em; white-space: pre; }
+  button { font-size: 1.2em; padding: 0.5em 1em; margin: 1em 0; cursor: pointer; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>Airspy WebUSB Performance Test</h1>
+<button id="connect-btn" class="hidden">Connect Airspy</button>
+<div id="status">Initializing...</div>
+<div id="result"></div>
+<script type="module">
+import { AirspyDevice } from '../src/devices/airspy.ts';
+
+const connectBtn = document.getElementById('connect-btn');
+const statusEl = document.getElementById('status');
+const resultEl = document.getElementById('result');
+
+let _storedDevice = null;
+let _devicePromise = null;
+let _perfRunning = false;
+
+// On load, check for pre-authorized device
+(async () => {
+  try {
+    const devices = await navigator.usb.getDevices();
+    const airspy = devices.find(d => d.vendorId === 0x1d50 && d.productId === 0x60a1);
+    if (airspy) {
+      _storedDevice = airspy;
+      statusEl.textContent = `Pre-authorized device ready: ${airspy.productName}`;
+      return;
+    }
+  } catch { /* USB API not available */ }
+  // No pre-authorized device — show connect button immediately
+  connectBtn.classList.remove('hidden');
+  statusEl.textContent = 'Click "Connect Airspy" to authorize the device.';
+  _devicePromise = new Promise((resolve, reject) => {
+    connectBtn.onclick = async () => {
+      try {
+        const device = await navigator.usb.requestDevice({
+          filters: [{ vendorId: 0x1d50, productId: 0x60a1 }]
+        });
+        _storedDevice = device;
+        connectBtn.classList.add('hidden');
+        statusEl.textContent = `Device authorized: ${device.productName}`;
+        resolve(device);
+      } catch (err) {
+        statusEl.textContent = 'Authorization failed: ' + err;
+        reject(err);
+      }
+    };
+  });
+})();
+
+window.runPerfTest = async function(durationSec = 5, sampleRate = 10000000) {
+  if (_perfRunning) return { error: 'Test already running' };
+  _perfRunning = true;
+
+  resultEl.textContent = '';
+
+  // Wait for device if authorization is in progress
+  let device = _storedDevice;
+  if (!device && _devicePromise) {
+    statusEl.textContent = 'Waiting for device authorization...';
+    try {
+      device = await Promise.race([
+        _devicePromise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000)),
+      ]);
+    } catch (err) {
+      statusEl.textContent = 'Device authorization failed: ' + err;
+      _perfRunning = false;
+      return { error: String(err) };
+    }
+  }
+  if (!device) {
+    statusEl.textContent = 'No Airspy device available. Use "Connect Airspy" button.';
+    _perfRunning = false;
+    return { error: 'No Airspy device available' };
+  }
+
+  statusEl.textContent = `Device: ${device.productName} (${device.serialNumber || 'no serial'})\nOpening...`;
+
+  const airspy = new AirspyDevice();
+  try {
+    await airspy.open(device);
+  } catch (err) {
+    statusEl.textContent = 'Open failed: ' + err;
+    _perfRunning = false;
+    return { error: 'open: ' + String(err) };
+  }
+
+  statusEl.textContent += `\nConfiguring (${(sampleRate/1e6).toFixed(1)} MSps, 133.56 MHz, bias tee ON, LNA=6, Mixer=6, VGA=6)...`;
+
+  try {
+    await airspy.setSampleRate(sampleRate);
+    await airspy.setFrequency(133560000);
+    await airspy.setBiasTee(true);
+    await airspy.setGain('LNA', 6);
+    await airspy.setGain('Mixer', 6);
+    await airspy.setGain('VGA', 6);
+    await airspy.setTunerAgc(false);
+    await airspy.setMixerAgc(false);
+  } catch (err) {
+    statusEl.textContent += '\nConfig failed: ' + err;
+    await airspy.close();
+    _perfRunning = false;
+    return { error: 'config: ' + String(err) };
+  }
+
+  statusEl.textContent += '\nStarting RX...';
+
+  let totalBytes = 0;
+  let totalTransfers = 0;
+  const startTime = performance.now();
+  let peakBps = 0;
+  let lastLogTime = startTime;
+  let lastLogBytes = 0;
+
+  try {
+    await airspy.startRx((data) => {
+      totalBytes += data.byteLength;
+      totalTransfers++;
+
+      const now = performance.now();
+      const elapsed = now - lastLogTime;
+      if (elapsed >= 500) {
+        const bps = (totalBytes - lastLogBytes) / (elapsed / 1000);
+        if (bps > peakBps) peakBps = bps;
+        lastLogTime = now;
+        lastLogBytes = totalBytes;
+      }
+    });
+  } catch (err) {
+    statusEl.textContent += '\nstartRx failed: ' + err;
+    await airspy.close();
+    _perfRunning = false;
+    return { error: 'startRx: ' + String(err) };
+  }
+
+  statusEl.textContent += '\nReceiving — discarding data...';
+
+  await new Promise(resolve => setTimeout(resolve, durationSec * 1000));
+
+  statusEl.textContent += '\nStopping...';
+  await airspy.stopRx();
+  await airspy.close();
+
+  const elapsed = (performance.now() - startTime) / 1000;
+  const bps = elapsed > 0 ? totalBytes / elapsed : 0;
+  const mbps = (bps * 8) / 1_000_000;
+  const msps = bps / (2 * 2) / 1_000_000;  // 4 bytes per IQ pair
+  const peakMsps = peakBps / 4 / 1_000_000;
+
+  const stats = {
+    durationSec: elapsed,
+    totalTransfers,
+    totalBytes,
+    bytesPerSec: bps,
+    mbps,
+    msps,
+    peakBytesPerSec: peakBps,
+    peakMsps,
+    avgTransferSize: totalTransfers > 0 ? totalBytes / totalTransfers : 0,
+  };
+
+  const result =
+`=== Airspy WebUSB Performance ===
+Duration:       ${stats.durationSec.toFixed(2)} s
+Transfers:      ${stats.totalTransfers}
+Total data:     ${(stats.totalBytes / 1024 / 1024).toFixed(2)} MiB
+Throughput:     ${stats.msps.toFixed(2)} MSps
+                ${(stats.bytesPerSec / 1024 / 1024).toFixed(2)} MiB/s
+                ${stats.mbps.toFixed(2)} Mbps
+Peak:           ${stats.peakMsps.toFixed(2)} MSps (${(stats.peakBytesPerSec / 1024 / 1024).toFixed(2)} MiB/s)
+Avg transfer:   ${(stats.avgTransferSize / 1024).toFixed(1)} KiB`;
+
+  resultEl.textContent = result;
+  statusEl.textContent = 'Done.';
+
+  _perfRunning = false;
+  return stats;
+};
+</script>
+</body>
+</html>

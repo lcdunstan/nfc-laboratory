@@ -1,0 +1,50 @@
+{
+  "description": "Test vectors for Airspy 12-bit int16 IQ → magnitude conversion. iq values are interleaved I/Q pairs in Airspy 12-bit format (0–4095, DC at 2048). mag values are the expected Float32Array outputs. Tolerance for comparison: 1e-4.",
+  "vectors": [
+    {
+      "name": "dc_zero",
+      "iq": [2048, 2048, 2048, 2048],
+      "mag": [0.0, 0.0]
+    },
+    {
+      "name": "max_iq",
+      "iq": [4095, 4095],
+      "mag": [1.4135]
+    },
+    {
+      "name": "min_iq",
+      "iq": [0, 0],
+      "mag": [1.4142]
+    },
+    {
+      "name": "i_only_pos",
+      "iq": [4095, 2048],
+      "mag": [0.9995]
+    },
+    {
+      "name": "i_only_neg",
+      "iq": [0, 2048],
+      "mag": [1.0]
+    },
+    {
+      "name": "q_only_pos",
+      "iq": [2048, 4095],
+      "mag": [0.9995]
+    },
+    {
+      "name": "mid_range",
+      "iq": [3072, 3072],
+      "mag": [0.7071]
+    },
+    {
+      "name": "mixed",
+      "iq": [3072, 2048, 2048, 1024],
+      "mag": [0.5, 0.5]
+    },
+    {
+      "name": "alternating",
+      "iq": [4095, 0, 0, 4095, 2048, 2048, 1024, 3072],
+      "mag": [1.4139, 1.4139, 0.0, 0.7071]
+    }
+  ]
+}

@@ -14,8 +14,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD 99)
 
 # Use emscripten's port of zlib
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -sUSE_ZLIB")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -sUSE_ZLIB")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O2 -sUSE_ZLIB")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2 -sUSE_ZLIB")
 
 set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
@@ -139,6 +139,43 @@ target_include_directories(lab-tasks PUBLIC
 target_include_directories(lab-tasks PRIVATE
     ${SOURCE_DIR}/src/nfc-lib/lib-lab/lab-tasks/src/main/cpp)
 target_link_libraries(lab-tasks lab-logic lab-radio rt-lang hw-core nlohmann microtar mufft z)
+
+# ── nfc-decoder-wasm (C-ABI bridge for browser NfcDecoder) ───────────────
+
+add_library(nfc-decoder-wasm STATIC
+    decoder-bridge.cpp
+    iq-processor.cpp
+)
+target_compile_options(nfc-decoder-wasm PRIVATE -msimd128)
+target_include_directories(nfc-decoder-wasm PRIVATE
+    ${SOURCE_DIR}/src/nfc-lib/lib-lab/lab-radio/src/main/include
+    ${SOURCE_DIR}/src/nfc-lib/lib-lab/lab-radio/src/main/cpp
+    ${SOURCE_DIR}/src/nfc-lib/lib-lab/lab-data/src/main/include
+    ${SOURCE_DIR}/src/nfc-lib/lib-lab/lab-data/src/main/cpp
+    ${SOURCE_DIR}/src/nfc-lib/lib-hw/hw-core/src/main/include
+    ${SOURCE_DIR}/src/nfc-lib/lib-hw/hw-core/src/main/cpp
+    ${SOURCE_DIR}/src/nfc-lib/lib-rt/rt-lang/src/main/include
+    ${SOURCE_DIR}/src/nfc-lib/lib-rt/rt-lang/src/main/cpp
+    ${SOURCE_DIR}/src/nfc-lib/lib-ext/nlohmann/src/main/include
+)
+target_link_libraries(nfc-decoder-wasm lab-radio hw-core rt-lang lab-data nlohmann)
+
+# As a standalone .wasm executable so Emscripten links everything into one binary
+add_executable(nfc-decoder-wasm-bin
+    decoder-bridge.cpp
+    iq-processor.cpp
+)
+target_link_libraries(nfc-decoder-wasm-bin lab-radio hw-core rt-lang lab-data nlohmann)
+target_compile_options(nfc-decoder-wasm-bin PRIVATE -msimd128)
+target_link_options(nfc-decoder-wasm-bin PRIVATE
+    -sALLOW_MEMORY_GROWTH
+    -sASSERTIONS
+    -sEXPORTED_FUNCTIONS=_decoder_create,_decoder_feed,_decoder_poll_frames,_decoder_configure,_decoder_get_status,_decoder_destroy,_iq_to_magnitude_simd,_iq_processor_create,_iq_processor_destroy,_iq_processor_process,_decimate_f32,_malloc,_free
+    -sEXPORTED_RUNTIME_METHODS=ccall,cwrap,getValue,setValue,HEAPF32,HEAPU8,HEAP16
+    -sMODULARIZE=1
+    -sEXPORT_NAME=NfcDecoderModule
+    -sENVIRONMENT=web,worker,node
+)
 
 # ── test-sdr-wasm (WASM equivalent of test-sdr, auto-runs on preloaded WAV data) ──
 

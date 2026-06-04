@@ -33,6 +33,8 @@
 #include <cmath>
 #include <mutex>
 #include <condition_variable>
+#include <thread>
+#include <atomic>
 #include <iostream>
 
 #include <rt/Executor.h>
@@ -46,6 +48,9 @@
 
 #include <lab/tasks/RadioDecoderTask.h>
 #include <lab/tasks/RadioDeviceTask.h>
+
+#include <hw/RecordDevice.h>
+#include <hw/SignalType.h>
 
 #include <nlohmann/json.hpp>
 
@@ -144,6 +149,7 @@ struct Main
    rt::Subject<rt::Event>::Subscription receiverStatusSubscription;
    rt::Subject<rt::Event>::Subscription decoderStatusSubscription;
    rt::Subject<lab::RawFrame>::Subscription decoderFrameSubscription;
+   rt::Subject<hw::SignalBuffer>::Subscription signalRawSubscription;
 
    // frame stream queue buffer
    rt::BlockingQueue<lab::RawFrame> frameQueue;
@@ -171,6 +177,15 @@ struct Main
    // output mode
    bool jsonOutputEnabled = false;
 
+   // WAV file mode
+   std::string wavFilePath;
+   bool wavMode = false;
+   unsigned int wavSampleRate = 0;
+   unsigned int wavChannelCount = 0;
+   std::atomic<bool> decoderStarted = false;
+   std::atomic<bool> wavFinished = false;
+   std::thread wavFeederThread;
+
    Main()
    {
    }
@@ -188,7 +203,9 @@ struct Main
 
       // create processing tasks
       executor.submit(lab::RadioDecoderTask::construct());
-      executor.submit(lab::RadioDeviceTask::construct());
+
+      if (!wavMode)
+         executor.submit(lab::RadioDeviceTask::construct());
 
       // create receiver streams
       receiverStatusStream = rt::Subject<rt::Event>::name("radio.receiver.status");
@@ -199,7 +216,7 @@ struct Main
       decoderCommandStream = rt::Subject<rt::Event>::name("radio.decoder.command");
       decoderFrameStream = rt::Subject<lab::RawFrame>::name("radio.decoder.frame");
 
-      // handler for decoder status events
+      // handler for receiver status events
       receiverStatusSubscription = receiverStatusStream->subscribe([&](const rt::Event &event) {
          receiverStatus = json::parse(event.get<std::string>("data").value());
       });
@@ -207,6 +224,9 @@ struct Main
       // subscribe to decoder status
       decoderStatusSubscription = decoderStatusStream->subscribe([&](const rt::Event &event) {
          decoderStatus = json::parse(event.get<std::string>("data").value());
+
+         if (wavMode && decoderStatus["status"] == "decoding")
+            decoderStarted = true;
       });
 
       // subscribe to decoder frames
@@ -214,9 +234,28 @@ struct Main
          frameQueue.add(frame);
       });
 
+      // subscribe to raw signal (magnitude) for diagnostic logging
+      signalRawSubscription = rt::Subject<hw::SignalBuffer>::name("radio.signal.raw")->subscribe([&](const hw::SignalBuffer &buffer) {
+         if (buffer.elements() > 0)
+         {
+            float sum = 0, min = INFINITY, max = -INFINITY;
+            for (unsigned int i = 0; i < buffer.elements(); i++)
+            {
+               float v = buffer[i];
+               sum += v;
+               if (v < min) min = v;
+               if (v > max) max = v;
+            }
+            log->info("mag avg={} [{}, {}]  elements={}  rate={}", {sum / buffer.elements(), min, max, buffer.elements(), buffer.sampleRate()});
+         }
+      });
+
       // enable receiver & decoder
       const json enable = {{"enabled", true}};
-      receiverCommandStream->next({lab::RadioDeviceTask::Configure, {{"data", enable.dump()}}});
+
+      if (!wavMode)
+         receiverCommandStream->next({lab::RadioDeviceTask::Configure, {{"data", enable.dump()}}});
+
       decoderCommandStream->next({lab::RadioDecoderTask::Configure, {{"data", enable.dump()}}});
    }
 
@@ -438,6 +477,9 @@ struct Main
 
    void printFrame(const lab::RawFrame &frame) const
    {
+      if (!frame.isValid())
+         return;
+
       int offset = 0;
       char buffer[16384];
 
@@ -464,6 +506,71 @@ struct Main
 
       // send to stdout
       fprintf(stdout, "%s\n", buffer);
+   }
+
+   void feedWav()
+   {
+      auto *signalStream = rt::Subject<hw::SignalBuffer>::name("radio.signal.raw");
+
+      hw::RecordDevice source(wavFilePath);
+
+      if (!source.open(hw::SignalDevice::Mode::Read))
+      {
+         log->error("Cannot open WAV file: {}", {wavFilePath});
+         wavFinished = true;
+         return;
+      }
+
+      unsigned int channelCount = source.get<unsigned int>(hw::SignalDevice::PARAM_CHANNEL_COUNT);
+      unsigned int sampleRate = source.get<unsigned int>(hw::SignalDevice::PARAM_SAMPLE_RATE);
+
+      log->info("feeding WAV file: {} channels: {} sampleRate: {}", {wavFilePath, channelCount, sampleRate});
+
+      while (!source.isEof() && !terminate)
+      {
+         if (channelCount == 2)
+         {
+            // I/Q WAV: read interleaved IQ pairs, convert to magnitude
+            hw::SignalBuffer buffer(65536 * 2, 2, 1, sampleRate, 0, 0, hw::SignalType::SIGNAL_TYPE_RADIO_IQ);
+
+            if (source.read(buffer) > 0)
+            {
+               hw::SignalBuffer result(buffer.elements(), 1, 1, sampleRate, buffer.offset(), 0, hw::SignalType::SIGNAL_TYPE_RADIO_SAMPLES);
+
+               float *src = buffer.data();
+               float *dst = result.push(buffer.elements());
+
+               for (int j = 0, n = 0; j < buffer.elements(); j += 4, n += 8)
+               {
+                  dst[j + 0] = sqrtf(src[n + 0] * src[n + 0] + src[n + 1] * src[n + 1]);
+                  dst[j + 1] = sqrtf(src[n + 2] * src[n + 2] + src[n + 3] * src[n + 3]);
+                  dst[j + 2] = sqrtf(src[n + 4] * src[n + 4] + src[n + 5] * src[n + 5]);
+                  dst[j + 3] = sqrtf(src[n + 6] * src[n + 6] + src[n + 7] * src[n + 7]);
+               }
+
+               result.flip();
+               signalStream->next(result);
+            }
+         }
+         else
+         {
+            // magnitude WAV: feed magnitude samples directly
+            hw::SignalBuffer buffer(65536 * channelCount, channelCount, 1, sampleRate, 0, 0, hw::SignalType::SIGNAL_TYPE_RADIO_SAMPLES);
+
+            if (source.read(buffer) > 0)
+            {
+               signalStream->next(buffer);
+            }
+         }
+      }
+
+      source.close();
+
+      // signal EOF to decoder
+      log->info("WAV EOF reached, sending shutdown signal");
+      signalStream->next({});
+
+      wavFinished = true;
    }
 
    void finish()
@@ -496,11 +603,12 @@ struct Main
          {"mixer-agc", no_argument, nullptr, 'a'},
          {"tuner-agc", no_argument, nullptr, 'u'},
          {"bias-tee", no_argument, nullptr, 'b'},
+         {"wav", required_argument, nullptr, 'w'},
          {nullptr, 0, nullptr, 0}
       };
 
       int option_index = 0;
-      while ((opt = getopt_long(argc, argv, "hvjl:dp:t:f:s:g:G:aub", long_options, &option_index)) != -1)
+      while ((opt = getopt_long(argc, argv, "hvjl:dp:t:f:s:g:G:aubw:", long_options, &option_index)) != -1)
       {
          switch (opt)
          {
@@ -648,10 +756,45 @@ struct Main
                break;
             }
 
+            case 'w':
+            {
+               wavFilePath = optarg;
+               break;
+            }
+
             default:
                showUsage();
                return -1;
          }
+      }
+
+      // WAV file mode: probe file and set decoder parameters
+      if (!wavFilePath.empty())
+      {
+         wavMode = true;
+
+         hw::RecordDevice source(wavFilePath);
+
+         if (!source.open(hw::SignalDevice::Mode::Read))
+         {
+            fprintf(stderr, "Cannot open WAV file: %s\n", wavFilePath.c_str());
+            return -1;
+         }
+
+         wavSampleRate = source.get<unsigned int>(hw::SignalDevice::PARAM_SAMPLE_RATE);
+         wavChannelCount = source.get<unsigned int>(hw::SignalDevice::PARAM_CHANNEL_COUNT);
+
+         unsigned int streamTime = source.get<unsigned int>(hw::SignalDevice::PARAM_STREAM_TIME);
+
+         if (streamTime == 0)
+            streamTime = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+
+         source.close();
+
+         decoderParams["sampleRate"] = wavSampleRate;
+         decoderParams["streamTime"] = streamTime;
+
+         printf("WAV file: %s  sampleRate: %u  channels: %u  streamTime: %u\n", wavFilePath.c_str(), wavSampleRate, wavChannelCount, streamTime);
       }
 
       // get start time
@@ -659,6 +802,18 @@ struct Main
 
       // initialize
       init(jsonOutput);
+
+      // start WAV feeder thread if in WAV mode
+      if (wavMode)
+      {
+         wavFeederThread = std::thread([this]() {
+            while (!decoderStarted && !terminate)
+               std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+            if (!terminate)
+               feedWav();
+         });
+      }
 
       // main loop until capture finished
       while (!terminate)
@@ -672,11 +827,14 @@ struct Main
          if (terminate)
             break;
 
-         // check receiver status
-         if (checkReceiverStatus() < 0)
+         // check receiver status (skip in WAV mode)
+         if (!wavMode)
          {
-            fprintf(stdout, "Finish capture, invalid receiver!\n");
-            finish();
+            if (checkReceiverStatus() < 0)
+            {
+               fprintf(stdout, "Finish capture, invalid receiver!\n");
+               finish();
+            }
          }
 
          // check decoder status
@@ -704,7 +862,18 @@ struct Main
 
          // flush console output
          fflush(stdout);
+
+         // exit when WAV file is fully processed
+         if (wavFinished)
+         {
+            fprintf(stdout, "Finish capture, WAV file processed!\n");
+            finish();
+         }
       }
+
+      // join feeder thread
+      if (wavFeederThread.joinable())
+         wavFeederThread.join();
 
       return 0;
    }
@@ -740,6 +909,8 @@ struct Main
       std::cout << "  -a, --mixer-agc       Enable mixer AGC" << std::endl;
       std::cout << "  -u, --tuner-agc       Enable tuner AGC" << std::endl;
       std::cout << "  -b, --bias-tee        Enable bias-tee (required for Spyverter)" << std::endl;
+      std::cout << "  -w, --wav FILE        Read from WAV file instead of live SDR" << std::endl;
+      std::cout << "                        Supports mono (magnitude) and stereo (I/Q) WAVs" << std::endl;
       std::cout << "  -t SECONDS            Stop capture after specified number of seconds" << std::endl;
       std::cout << "                        Default: run until interrupted (Ctrl+C)" << std::endl;
       std::cout << std::endl;
@@ -762,6 +933,9 @@ struct Main
       std::cout << std::endl;
       std::cout << "  " << programName << " -f 40680000 -s 10000000 -j" << std::endl;
       std::cout << "    Capture with specific frequency/sample-rate (Airspy settings)" << std::endl;
+      std::cout << std::endl;
+      std::cout << "  " << programName << " -w capture.wav -j" << std::endl;
+      std::cout << "    Decode NFC frames from a WAV file with JSON output" << std::endl;
       std::cout << std::endl;
       std::cout << "Supported Hardware:" << std::endl;
       std::cout << "  - RTL-SDR dongles" << std::endl;
