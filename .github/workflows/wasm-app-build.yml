@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Emscripten
-        uses: emscripten/emsdk@v3
+        uses: emscripten-core/setup-emsdk@v15
         with:
           version: latest
 
