@@ -116,7 +116,7 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: nfc-rx-web
-          path: .
+          path: webapp
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
@@ -124,7 +124,7 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: src/nfc-app/app-rx-web/dist
+          path: webapp
 
       - name: Deploy to GitHub Pages
         id: deployment
