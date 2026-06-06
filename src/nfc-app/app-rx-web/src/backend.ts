@@ -200,6 +200,7 @@ export async function startRx(
     decoderModule = await mod({
       locateFile: (path: string) => '/pkg/' + path,
     });
+    if (!decoderModule) throw new Error('decoder module init failed');
 
     deviceInputRate = sampleRate;
     deviceOutputRate = sampleRate / decFactor;
