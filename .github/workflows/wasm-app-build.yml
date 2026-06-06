@@ -1,0 +1,87 @@
+name: WASM App Build
+
+on:
+  push:
+    tags:
+      - '*'
+    branches:
+      - master
+      - develop
+  workflow_dispatch:
+
+jobs:
+
+  #
+  # Emscripten build of nfc-decoder-wasm-bin + WASM test
+  #
+  build-wasm:
+    name: Build WASM module
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Emscripten
+        uses: emscripten/emsdk@v3
+        with:
+          version: latest
+
+      - name: Configure (Emscripten)
+        run: cmake -S emscripten -B build-em -G "Unix Makefiles"
+
+      - name: Build
+        run: cmake --build build-em -j$(nproc)
+
+      - name: Run test-sdr-wasm
+        working-directory: build-em
+        run: node test-sdr-wasm.js
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-decoder-wasm
+          path: |
+            build-em/nfc-decoder-wasm-bin.js
+            build-em/nfc-decoder-wasm-bin.wasm
+
+  #
+  # Vite build of the nfc-rx-web browser app
+  #
+  build-web:
+    name: Build web app
+    runs-on: ubuntu-latest
+    needs: build-wasm
+
+    steps:
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: src/nfc-app/app-rx-web/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nfc-decoder-wasm
+          path: src/nfc-app/app-rx-web/pkg
+
+      - name: Install dependencies
+        working-directory: src/nfc-app/app-rx-web
+        run: npm ci
+
+      - name: Build web app
+        working-directory: src/nfc-app/app-rx-web
+        run: npm run build
+
+      - name: Upload web app
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfc-rx-web
+          path: src/nfc-app/app-rx-web/dist
