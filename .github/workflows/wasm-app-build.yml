@@ -109,6 +109,15 @@ jobs:
 
     steps:
 
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Download web app artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: nfc-rx-web
+          path: .
+
       - name: Setup Pages
         uses: actions/configure-pages@v5
 
