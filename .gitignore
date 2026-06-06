@@ -22,3 +22,4 @@ nfc-rx
 pkg/
 *-wasm-bin.js
 *-wasm-bin.wasm
+src/nfc-app/app-rx-web/dist/
