@@ -198,7 +198,7 @@ export async function startRx(
     if (!mod) throw new Error('NfcDecoderModule not loaded');
 
     decoderModule = await mod({
-      locateFile: (path: string) => '/pkg/' + path,
+      locateFile: (path: string) => './pkg/' + path,
     });
     if (!decoderModule) throw new Error('decoder module init failed');
 
@@ -389,7 +389,7 @@ export async function feedWav(
   if (!mod) throw new Error('NfcDecoderModule not loaded');
 
   const decoderModule = await mod({
-    locateFile: (path: string) => '/pkg/' + path,
+    locateFile: (path: string) => './pkg/' + path,
   });
 
   // Parse WAV header
