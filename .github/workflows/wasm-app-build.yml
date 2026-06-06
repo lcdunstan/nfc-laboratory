@@ -21,7 +21,7 @@ jobs:
     steps:
 
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Emscripten
         uses: emscripten-core/setup-emsdk@v15
@@ -39,7 +39,7 @@ jobs:
         run: node test-sdr-wasm.js
 
       - name: Upload WASM artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nfc-decoder-wasm
           path: |
@@ -57,17 +57,17 @@ jobs:
     steps:
 
       - name: Check out code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: src/nfc-app/app-rx-web/package-lock.json
 
       - name: Download WASM artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nfc-decoder-wasm
           path: src/nfc-app/app-rx-web/pkg
@@ -81,7 +81,7 @@ jobs:
         run: npm run build
 
       - name: Upload web app
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nfc-rx-web
           path: src/nfc-app/app-rx-web/dist
