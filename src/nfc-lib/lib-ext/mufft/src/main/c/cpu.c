@@ -114,9 +114,20 @@ unsigned mufft_get_cpu_flags(void)
 }
 
 #else
+#ifdef __EMSCRIPTEN__
+unsigned mufft_get_cpu_flags(void)
+{
+    /* Emscripten SSE3 emulation: x86 SSE3 intrinsics in
+     * x86/kernel.sse3.c are translated to WASM SIMD128 ops by the
+     * compiler. Report the SSE3 flag so mufft's dispatch picks the
+     * SSE3 routines. AVX is never available under wasm32. */
+    return MUFFT_FLAG_CPU_SSE3;
+}
+#else
 unsigned mufft_get_cpu_flags(void)
 {
     return 0;
 }
+#endif
 #endif
 

@@ -48,14 +48,29 @@ target_compile_options(ed25519 PRIVATE -DED25519_NO_SEED)
 target_include_directories(ed25519 PUBLIC
     ${SOURCE_DIR}/src/nfc-lib/lib-ext/ed25519/src/main/c)
 
-# mufft (pure C FFT, no hw deps; skip x86-specific SIMD variants for WASM)
+# mufft (pure C FFT, no hw deps)
+# The SSE3 kernel (x86/kernel.sse3.c) is compiled with -msimd128 -msse3.
+# Emscripten translates the SSE3 intrinsics (addsub, moveldup, ...) to
+# WASM SIMD128 ops. The AVX path is not built (no -mavx on wasm32).
+# cpu.c returns MUFFT_FLAG_CPU_SSE3 under __EMSCRIPTEN__ so the dispatcher
+# picks the SSE3 entry.
 add_library(mufft STATIC
     ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/c/fft.c
     ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/c/kernel.c
     ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/c/cpu.c)
+target_compile_definitions(mufft PRIVATE MUFFT_HAVE_SSE3)
 target_include_directories(mufft PUBLIC
     ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/include)
-target_link_libraries(mufft m)
+
+add_library(mufft-sse3 STATIC
+    ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/c/x86/kernel.sse3.c)
+target_compile_options(mufft-sse3 PRIVATE
+    -Wall -Wextra -msimd128 -msse3 -DMUFFT_HAVE_SSE3)
+target_include_directories(mufft-sse3 PUBLIC
+    ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/include
+    ${SOURCE_DIR}/src/nfc-lib/lib-ext/mufft/src/main/c)
+
+target_link_libraries(mufft PRIVATE mufft-sse3 m)
 
 # ── runtime library (depends on microtar + zlib) ──────────────────────────
 
