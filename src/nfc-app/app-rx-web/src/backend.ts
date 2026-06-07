@@ -28,24 +28,6 @@ let maxRecordRawSamples = 0;
 let recordedRawSamples = 0;
 let onRecordingRawComplete: ((blob: Blob) => void) | null = null;
 
-// Waveform ring buffer (last ~8192 magnitude samples)
-const WAVEFORM_LEN = 8192;
-const waveformBuf = new Float32Array(WAVEFORM_LEN);
-let waveformPos = 0;
-
-export function getWaveformData(): Float32Array {
-  const out = new Float32Array(WAVEFORM_LEN);
-  // Copy in ring order: [waveformPos..end, 0..waveformPos)
-  const end = waveformPos % WAVEFORM_LEN;
-  if (end > 0) {
-    out.set(waveformBuf.subarray(0, end), WAVEFORM_LEN - end);
-    out.set(waveformBuf.subarray(end), 0);
-  } else {
-    out.set(waveformBuf);
-  }
-  return out;
-}
-
 export type FrameCallback = (frame: NfcFrame) => void;
 export type StatusCallback = (state: string, msg?: string) => void;
 
@@ -186,10 +168,18 @@ function createWavBlob(
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+export interface NfcProtocolConfig {
+  nfca: boolean;
+  nfcb: boolean;
+  nfcf: boolean;
+  nfcv: boolean;
+}
+
 export async function startRx(
   sdrDevice: SdrDevice,
   sampleRate: number,
   useIqConverter: boolean,
+  nfcProtocol: NfcProtocolConfig,
   onFrame: FrameCallback,
   onStatus: StatusCallback,
 ): Promise<void> {
@@ -212,14 +202,14 @@ export async function startRx(
     wasmInputBuf = decoderModule._malloc(wasmBufSize);
     wasmOutputBuf = decoderModule._malloc(65536 * 4);
 
-    // Enable NfcA only (most common). Add nfcb/nfcf/nfcv if needed — each adds ~25% CPU
+    // Enable protocols per UI selection. Each adds ~25% CPU per type.
     decoder.configure({
       streamTime: Math.floor(Date.now() / 1000),
       protocol: {
-        nfca: { enabled: true },
-        nfcb: { enabled: false },
-        nfcf: { enabled: false },
-        nfcv: { enabled: false },
+        nfca: { enabled: nfcProtocol.nfca },
+        nfcb: { enabled: nfcProtocol.nfcb },
+        nfcf: { enabled: nfcProtocol.nfcf },
+        nfcv: { enabled: nfcProtocol.nfcv },
       },
     });
 
@@ -377,7 +367,6 @@ export function stopRx(): void {
   }
   wasmBufSize = 0;
   decoderModule = null;
-  waveformPos = 0;
 }
 
 export async function feedWav(

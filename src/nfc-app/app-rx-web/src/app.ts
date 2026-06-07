@@ -1,7 +1,7 @@
 import type { NfcFrame } from './decoder';
 import type { SdrDevice, GainMode } from './sdr-device';
 import { deviceCatalog, findDeviceByUsb } from './device-catalog';
-import { startRx, stopRx, startRecording, startRecordingRaw, isRecordingActive, isRecordingRawActive, feedWav, stopRecordingRaw, getWaveformData } from './backend';
+import { startRx, stopRx, startRecording, startRecordingRaw, isRecordingActive, isRecordingRawActive, feedWav, stopRecordingRaw } from './backend';
 
 export class App {
   private frameLog: HTMLElement;
@@ -21,8 +21,11 @@ export class App {
   private tunerAgcInput: HTMLInputElement;
   private mixerAgcInput: HTMLInputElement;
   private iqConverterInput: HTMLInputElement;
+  private nfcTypeAInput: HTMLInputElement;
+  private nfcTypeBInput: HTMLInputElement;
+  private nfcTypeFInput: HTMLInputElement;
+  private nfcTypeVInput: HTMLInputElement;
   private wavFileInput: HTMLInputElement;
-  private waveformCanvas: HTMLCanvasElement;
   private deviceDriver: SdrDevice | null = null;
   private currentSampleRate = 0;
 
@@ -44,8 +47,11 @@ export class App {
     this.tunerAgcInput = document.getElementById('tuner-agc') as HTMLInputElement;
     this.mixerAgcInput = document.getElementById('mixer-agc') as HTMLInputElement;
     this.iqConverterInput = document.getElementById('iq-converter') as HTMLInputElement;
+    this.nfcTypeAInput = document.getElementById('nfc-type-a') as HTMLInputElement;
+    this.nfcTypeBInput = document.getElementById('nfc-type-b') as HTMLInputElement;
+    this.nfcTypeFInput = document.getElementById('nfc-type-f') as HTMLInputElement;
+    this.nfcTypeVInput = document.getElementById('nfc-type-v') as HTMLInputElement;
     this.wavFileInput = document.getElementById('wav-file') as HTMLInputElement;
-    this.waveformCanvas = document.getElementById('waveform') as HTMLCanvasElement;
 
     this.populateDeviceList();
     this.populateGainMode([
@@ -54,7 +60,6 @@ export class App {
       { value: 2, name: 'Sensitivity' },
     ], 1);
     this.bindEvents();
-    //this.startWaveformLoop();
   }
 
   private populateDeviceList(): void {
@@ -168,6 +173,12 @@ export class App {
         deviceDriver,
         sampleRate,
         this.iqConverterInput.checked,
+        {
+          nfca: this.nfcTypeAInput.checked,
+          nfcb: this.nfcTypeBInput.checked,
+          nfcf: this.nfcTypeFInput.checked,
+          nfcv: this.nfcTypeVInput.checked,
+        },
         (frame) => this.appendFrame(frame),
         (state, msg) => {
           if (state === 'connected') this.setStatus('Connected');
@@ -178,7 +189,7 @@ export class App {
       );
 
     } catch (err) {
-      this.setStatus(`Error: ${err}`);
+      this.setStatus(this.formatStartError(err));
     }
   }
 
@@ -262,55 +273,6 @@ export class App {
     }
   }
 
-  private startWaveformLoop(): void {
-    const canvas = this.waveformCanvas;
-    const ctx = canvas.getContext('2d')!;
-    const W = canvas.width, H = canvas.height;
-    const midY = H / 2;
-
-    const draw = () => {
-      requestAnimationFrame(draw);
-      const data = getWaveformData();
-
-      ctx.clearRect(0, 0, W, H);
-
-      // Find min/max for auto-scale
-      let min = Infinity, max = -Infinity;
-      for (let i = 0; i < data.length; i++) {
-        const v = data[i];
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-
-      const range = Math.max(max - min, 0.001);
-      const scale = (H * 0.9) / range;
-      const yBase = H * 0.95 - (min * scale);
-
-      // Grid lines
-      ctx.strokeStyle = '#1a1a3e';
-      ctx.lineWidth = 1;
-      for (let y = 0; y < H; y += H / 4) {
-        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
-      }
-
-      // Signal line
-      ctx.strokeStyle = '#00d4ff';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      for (let x = 0; x < W && x < data.length; x++) {
-        const y = yBase - data[x] * scale;
-        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-
-      // Label
-      ctx.fillStyle = '#666';
-      ctx.font = '10px monospace';
-      ctx.fillText(`mag [${min.toFixed(4)}, ${max.toFixed(4)}]`, 4, 12);
-    };
-    draw();
-  }
-
   private lastCarrierOffTime = 0;
 
   private appendFrame(frame: NfcFrame): void {
@@ -362,5 +324,21 @@ export class App {
 
   private setStatus(msg: string): void {
     this.statusEl.textContent = msg;
+  }
+
+  private isLinux(): boolean {
+    return /linux/i.test(navigator.platform || '') || /linux/i.test(navigator.userAgent || '');
+  }
+
+  private formatStartError(err: unknown): string {
+    const msg = err instanceof Error ? err.message : String(err);
+    const name = (err as { name?: string })?.name || '';
+    // WebUSB raises DOMException(name=NetworkError) with this exact message
+    // when a kernel driver has the interface (e.g. airspy/airspyhf modules),
+    // or another Chrome tab/session is still holding the device.
+    if (name === 'NetworkError' && /claimInterface/i.test(msg) && this.isLinux()) {
+      return `Error: ${msg} — on Linux try: sudo rmmod airspy  (or close other Chrome tabs that may hold the device)`;
+    }
+    return `Error: ${msg}`;
   }
 }

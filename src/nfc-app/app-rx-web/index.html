@@ -10,12 +10,31 @@
   .container { max-width: 1200px; margin: 0 auto; }
   h1 { color: #00d4ff; margin-bottom: 1.5rem; font-size: 1.5rem; }
   .controls { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; margin-bottom: 1rem; padding: 1rem; background: #16213e; border-radius: 8px; }
+  #nfc-types { display: flex; gap: 0.75rem; padding: 0.25rem 0; align-items: center; }
+  #nfc-types label { display: flex; gap: 0.3rem; align-items: center; margin: 0; font-size: 0.85rem; color: #e0e0e0; }
+  #nfc-types input { width: auto; }
   .controls label { font-size: 0.85rem; color: #888; display: block; margin-bottom: 0.25rem; }
   .controls input, .controls select { background: #0f3460; color: #e0e0e0; border: 1px solid #333; padding: 0.5rem; border-radius: 4px; font-size: 0.9rem; }
   #gain-controls { display: flex; gap: 0.4rem; align-items: end; padding: 0.25rem 0; }
   .controls input { width: 140px; }
   .controls select { width: 180px; }
   .controls button { padding: 0.5rem 1.5rem; border: none; border-radius: 4px; font-size: 0.9rem; cursor: pointer; }
+  details.advanced { width: 100%; }
+  details.advanced > summary {
+    cursor: pointer;
+    user-select: none;
+    display: inline-block;
+    padding: 0.4rem 1rem;
+    background: #0f3460;
+    color: #00d4ff;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    list-style: none;
+  }
+  details.advanced > summary::-webkit-details-marker { display: none; }
+  details.advanced > summary::after { content: " \25BE"; margin-left: 0.5rem; }
+  details.advanced[open] > summary::after { content: " \25B4"; }
+  .advanced-body { display: flex; gap: 1rem; flex-wrap: wrap; align-items: end; margin-top: 0.5rem; width: 100%; }
   #btn-start { background: #00d4ff; color: #1a1a2e; }
   #btn-start:hover { background: #00b8e6; }
   #btn-stop { background: #e94560; color: #fff; }
@@ -43,53 +62,66 @@
       <input id="freq" type="number" value="133560000" step="1000">
     </div>
     <div>
-      <label for="sample-rate">Sample Rate</label>
-      <select id="sample-rate">
-        <option value="10000000">10 MSps</option>
-        <option value="6000000">6 MSps</option>
-        <option value="3000000">3 MSps</option>
-      </select>
-    </div>
-    <div>
       <label for="bias-tee">Bias Tee</label>
       <input id="bias-tee" type="checkbox" checked style="display:block;margin-top:0.35rem;width:auto;">
-    </div>
-    <div>
-      <label for="gain-mode">Gain Mode</label>
-      <select id="gain-mode"></select>
     </div>
     <div>
       <label for="gain-value">Gain Value</label>
       <input id="gain-value" type="range" min="0" max="21" value="6" style="width:8rem;">
       <span id="gain-value-label" style="font-size:0.75rem;color:#00d4ff;min-width:1.5rem;text-align:center">6</span>
     </div>
-    <div>
-      <label for="tuner-agc">Tuner AGC</label>
-      <input id="tuner-agc" type="checkbox" style="display:block;margin-top:0.35rem;width:auto;">
-    </div>
-    <div>
-      <label for="mixer-agc">Mixer AGC</label>
-      <input id="mixer-agc" type="checkbox" style="display:block;margin-top:0.35rem;width:auto;">
-    </div>
-    <div>
-      <label for="iq-converter">IQ Conv</label>
-      <input id="iq-converter" type="checkbox" checked style="display:block;margin-top:0.35rem;width:auto;">
-    </div>
     <button id="btn-start">Start</button>
     <button id="btn-stop" disabled>Stop</button>
-    <div>
-      <label for="record-duration">Capture (s)</label>
-      <input id="record-duration" type="number" value="5" min="1" max="300" style="width:5rem;">
-    </div>
-    <button id="btn-record" disabled>Record</button>
-    <button id="btn-record-raw" disabled>Record IQ</button>
-    <div>
-      <label for="wav-file">Test WAV</label>
-      <input id="wav-file" type="file" accept=".wav" style="display:block;margin-top:0.35rem;color:#e0e0e0;font-size:0.8rem;">
-    </div>
+    <details class="advanced">
+      <summary>Advanced</summary>
+      <div class="advanced-body">
+        <div>
+          <label for="sample-rate">Sample Rate</label>
+          <select id="sample-rate">
+            <option value="10000000">10 MSps</option>
+            <option value="6000000">6 MSps</option>
+            <option value="3000000">3 MSps</option>
+          </select>
+        </div>
+        <div>
+          <label for="gain-mode">Gain Mode</label>
+          <select id="gain-mode"></select>
+        </div>
+        <div>
+          <label for="tuner-agc">Tuner AGC</label>
+          <input id="tuner-agc" type="checkbox" style="display:block;margin-top:0.35rem;width:auto;">
+        </div>
+        <div>
+          <label for="mixer-agc">Mixer AGC</label>
+          <input id="mixer-agc" type="checkbox" style="display:block;margin-top:0.35rem;width:auto;">
+        </div>
+        <div>
+          <label for="iq-converter">IQ Conv</label>
+          <input id="iq-converter" type="checkbox" checked style="display:block;margin-top:0.35rem;width:auto;">
+        </div>
+        <div>
+          <label>NFC Types</label>
+          <div id="nfc-types">
+            <label><input id="nfc-type-a" type="checkbox" checked>NfcA</label>
+            <label><input id="nfc-type-b" type="checkbox" checked>NfcB</label>
+            <label><input id="nfc-type-f" type="checkbox" checked>NfcF</label>
+            <label><input id="nfc-type-v" type="checkbox" checked>NfcV</label>
+          </div>
+        </div>
+        <div>
+          <label for="record-duration">Capture (s)</label>
+          <input id="record-duration" type="number" value="5" min="1" max="300" style="width:5rem;">
+        </div>
+        <button id="btn-record" disabled>Record</button>
+        <button id="btn-record-raw" disabled>Record IQ</button>
+        <div>
+          <label for="wav-file">Test WAV</label>
+          <input id="wav-file" type="file" accept=".wav" style="display:block;margin-top:0.35rem;color:#e0e0e0;font-size:0.8rem;">
+        </div>
+      </div>
+    </details>
   </div>
   <div id="status">Ready — connect a WebUSB SDR device to begin.</div>
-  <canvas id="waveform" width="1200" height="200" style="width:100%;height:150px;background:#0f0f23;border:1px solid #333;border-radius:4px;margin-bottom:0.5rem;display:block;"></canvas>
   <div id="frame-log"></div>
 </div>
 <script src="./pkg/nfc-decoder-wasm-bin.js"></script>
