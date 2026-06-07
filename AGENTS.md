@@ -83,10 +83,11 @@ mod().then(m => {
 
 The web app lives at `src/nfc-app/app-rx-web/`. To use it:
 
-1. Build the WASM binary (above) and copy to the test directory:
+1. Build the WASM binary (above) and copy it next to the Vite app:
    ```bash
-   cp build-em/nfc-decoder-wasm-bin.{js,wasm} src/nfc-app/app-rx-web/test/pkg/
+   cp build-em/nfc-decoder-wasm-bin.{js,wasm} src/nfc-app/app-rx-web/pkg/
    ```
+   `pkg/` is what the Vite dev server and `index.html`'s `<script src="./pkg/...">` reference. For Playwright tests, also copy to `test/pkg/` (see below).
 
 2. Install JS deps and start dev server:
    ```bash
@@ -98,6 +99,52 @@ The web app lives at `src/nfc-app/app-rx-web/`. To use it:
 3. Open `http://localhost:5173` in a browser with WebUSB support (Chrome/Edge).
 
    **Frequency**: With an Airspy + Spyverter (120 MHz upconverter), tune to **133.56 MHz** (13.56 MHz + 120 MHz). Without a Spyverter, use 40.68 MHz (3rd harmonic of 13.56 MHz). The default in `index.html` is 133.56 MHz.
+
+### WASM asset path gotcha (production)
+
+`index.html` and `src/backend.ts` both reference the WASM via **relative** paths:
+
+- `index.html`: `<script src="./pkg/nfc-decoder-wasm-bin.js">`
+- `backend.ts`: `locateFile: (path) => './pkg/' + path` (called from `startRx` and `feedWav`)
+
+Both must stay relative (no leading `/`). An absolute `/pkg/...` would resolve to the **host root** when served from a project site like `lcdunstan.github.io/nfc-laboratory/`, giving a 404. The `Vite` base is also set command-dependent (`/nfc-laboratory/` for `build`, `/` for `serve`) so dev stays at root.
+
+## GitHub Actions: WASM build + Pages deploy
+
+Workflow: `.github/workflows/wasm-app-build.yml`. Three jobs in sequence:
+
+1. `build-wasm` — Emscripten build of `nfc-decoder-wasm-bin` + runs `node test-sdr-wasm.js`.
+2. `build-web` — downloads the WASM artifact into `src/nfc-app/app-rx-web/pkg/`, runs `npm ci && npm run build`, copies `pkg/nfc-decoder-wasm-bin.{js,wasm}` into `dist/pkg/`, uploads `dist/` as the `nfc-rx-web` artifact.
+3. `deploy` — downloads the `nfc-rx-web` artifact into `./webapp/`, then `configure-pages` + `upload-pages-artifact` + `deploy-pages`.
+
+### Triggers
+
+- `push` to `master` or `develop` → build-wasm + build-web (smoke test, no deploy).
+- `workflow_dispatch` → all three jobs (build + deploy).
+
+There is **no tag trigger** (deliberate — it would also fire `cmake-build.yml`'s multiplatform release job on any tag, which fails on test tags). Deploy is opt-in via `gh workflow run`.
+
+### Deploying
+
+From a clone with `gh` authenticated:
+
+```bash
+gh workflow run wasm-app-build.yml            # uses default branch
+gh workflow run wasm-app-build.yml --ref wasm # or any branch
+```
+
+Live site: `https://lcdunstan.github.io/nfc-laboratory/`.
+
+### One-time setup (already done for this repo)
+
+1. Repo Settings → Pages → Source: **GitHub Actions**. (GITHUB_TOKEN can't create the Pages site itself; it has to exist first.)
+2. Settings → Environments → `github-pages` → Deployment branches and tags → add `master` and `wasm` (or `*`). The env protection rule rejects deploys from refs not on the allowlist.
+
+### Gotchas baked into the workflow
+
+- `actions/configure-pages@v5` is still on Node 20 (no v6 yet). The deploy job sets `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true` to silence the deprecation warning and prepare for the June 16, 2026 default switch.
+- `actions/upload-artifact@v4+` (and v5/v6/v7) flatten the uploaded path — the directory prefix is stripped. So the `nfc-rx-web` artifact contains `index.html`, `assets/...`, `pkg/...` at its root, **not** at `src/nfc-app/app-rx-web/dist/...`. The deploy job downloads into `./webapp/` and feeds that path to `upload-pages-artifact` (don't reuse `src/nfc-app/app-rx-web/dist`).
+- Each job starts on a fresh runner. The deploy job explicitly `actions/checkout@v6` + `actions/download-artifact@v8` to populate the workspace; without those, `dist/` is missing.
 
 ## Playwright E2E tests (Tier 1)
 
