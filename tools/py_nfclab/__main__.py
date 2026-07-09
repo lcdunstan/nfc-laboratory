@@ -33,7 +33,17 @@ from . import (
     parse_nfcv_request,
     parse_nfcv_response,
 )
-from .protocol import detect_command
+from .protocol import (
+    detect_command,
+    decode_select_request,
+    decode_select_response,
+    decode_generate_ac_request,
+    decode_generate_ac_response,
+    extract_isodep_payload,
+    is_isodep_chained,
+    parse_apdu_command,
+    parse_apdu_response,
+)
 from .readers import TRZReader
 
 
@@ -66,173 +76,241 @@ TYPE_COLORS = {
 }
 
 
+def _format_hex(data: bytes, max_hex_chars: int = 32) -> str:
+    """Format bytes as hex, truncating if too long."""
+    hex_str = data.hex().upper()
+    if len(hex_str) > max_hex_chars:
+        return f"[{len(data)}B]:{hex_str[:max_hex_chars]}..."
+    return f":{hex_str}"
+
+
+def _format_nfca_poll(frame: NFCFrame) -> str:
+    """Format NFC-A Poll frame data section."""
+    # Chained I-Block — show raw fragment data
+    if is_isodep_chained(frame):
+        pcb = frame.data[0]
+        offset = 1 + (1 if pcb & 0x08 else 0) + (1 if pcb & 0x04 else 0)
+        fragment = frame.data[offset:-2]
+        return f"Fragment{_format_hex(fragment)}"
+
+    # 1. Try SELECT APDU
+    sel_req = decode_select_request(frame)
+    if sel_req:
+        return sel_req.format_detail()
+
+    # 2. Try GENERATE AC
+    gac_req = decode_generate_ac_request(frame)
+    if gac_req:
+        return gac_req.format_detail()
+
+    # 3. Try generic APDU (I-Block with C-APDU)
+    apdu_payload = extract_isodep_payload(frame)
+    if apdu_payload and len(apdu_payload) >= 4:
+        apdu = parse_apdu_command(apdu_payload)
+        if apdu:
+            parts = [f"CLA:{apdu.cla:02X} INS:{apdu.ins:02X}({apdu.ins_name})"]
+            parts.append(f"P1:{apdu.p1:02X} P2:{apdu.p2:02X}")
+            if apdu.lc is not None and apdu.data:
+                parts.append(f"Data{_format_hex(apdu.data)}")
+            if apdu.le is not None:
+                parts.append(f"Le:{apdu.le}")
+            return " ".join(parts)
+
+    # 4. Fallback to raw NFC-A request parsing
+    parsed_req = parse_nfca_request(frame)
+    if parsed_req:
+        parts = [f"Cmd:{parsed_req.cmd:02X}"]
+        if parsed_req.params:
+            parts.append(f"Params:{parsed_req.params.hex().upper()}")
+        if parsed_req.crc:
+            parts.append(f"CRC:{parsed_req.crc.hex().upper()}")
+        return " ".join(parts)
+
+    return None
+
+
+def _format_nfca_listen(frame: NFCFrame) -> str:
+    """Format NFC-A Listen frame data section."""
+    # Chained I-Block — show raw fragment data
+    if is_isodep_chained(frame):
+        pcb = frame.data[0]
+        offset = 1 + (1 if pcb & 0x08 else 0) + (1 if pcb & 0x04 else 0)
+        fragment = frame.data[offset:-2]
+        return f"Fragment{_format_hex(fragment)}"
+
+    # 1. Try SELECT response (FCI TLV)
+    sel_resp = decode_select_response(frame)
+    if sel_resp:
+        return sel_resp.format_detail()
+
+    # 2. Try GENERATE AC response
+    gac_resp = decode_generate_ac_response(frame)
+    if gac_resp and (gac_resp.cryptogram_type or gac_resp.tlv_fields):
+        return gac_resp.format_detail()
+
+    # 3. Try generic R-APDU
+    apdu_payload = extract_isodep_payload(frame)
+    if apdu_payload and len(apdu_payload) >= 2:
+        rapdu = parse_apdu_response(apdu_payload)
+        if rapdu:
+            parts = []
+            if rapdu.data:
+                parts.append(f"Data{_format_hex(rapdu.data)}")
+            parts.append(f"SW:{rapdu.sw:04X}({rapdu.sw_name})")
+            return " ".join(parts)
+
+    # 4. Fallback to raw NFC-A response parsing
+    parsed_resp = parse_nfca_response(frame)
+    if parsed_resp:
+        parts = []
+        if parsed_resp.payload is not None:
+            parts.append(f"Payload{_format_hex(parsed_resp.payload)}")
+        if parsed_resp.crc:
+            parts.append(f"CRC:{parsed_resp.crc.hex().upper()}")
+        return " ".join(parts)
+
+    return None
+
+
+def _format_nfcb_poll(frame: NFCFrame) -> str:
+    """Format NFC-B Poll frame data section."""
+    parsed_req = parse_nfcb_request(frame)
+    if parsed_req:
+        parts = [f"Cmd:{parsed_req.cmd:02X}"]
+        if parsed_req.params:
+            parts.append(f"Params:{parsed_req.params.hex().upper()}")
+        if parsed_req.crc:
+            parts.append(f"CRC:{parsed_req.crc.hex().upper()}")
+        return " ".join(parts)
+    return None
+
+
+def _format_nfcb_listen(frame: NFCFrame) -> str:
+    """Format NFC-B Listen frame data section."""
+    parsed_resp = parse_nfcb_response(frame)
+    if parsed_resp:
+        parts = []
+        if parsed_resp.payload is not None:
+            parts.append(f"Payload{_format_hex(parsed_resp.payload)}")
+        if parsed_resp.crc:
+            parts.append(f"CRC:{parsed_resp.crc.hex().upper()}")
+        return " ".join(parts)
+    return None
+
+
+def _format_nfcf_poll(frame: NFCFrame) -> str:
+    """Format NFC-F Poll frame data section."""
+    parsed_req = parse_nfcf_request(frame)
+    if parsed_req:
+        parts = []
+        if len(frame.data) > 0:
+            parts.append(f"L:{frame.data[0]:02X}")
+        parts.append(f"Cmd:{parsed_req.cmd:02X}")
+        if parsed_req.body:
+            parts.append(f"Body{_format_hex(parsed_req.body)}")
+        return " ".join(parts)
+    return None
+
+
+def _format_nfcf_listen(frame: NFCFrame) -> str:
+    """Format NFC-F Listen frame data section."""
+    parsed_resp = parse_nfcf_response(frame)
+    if parsed_resp:
+        parts = []
+        if len(frame.data) > 0:
+            parts.append(f"L:{frame.data[0]:02X}")
+        parts.append(f"Cmd:{parsed_resp.cmd:02X}")
+        if parsed_resp.body:
+            parts.append(f"Body{_format_hex(parsed_resp.body)}")
+        return " ".join(parts)
+    return None
+
+
+def _format_nfcv_poll(frame: NFCFrame) -> str:
+    """Format NFC-V Poll frame data section."""
+    parsed_req = parse_nfcv_request(frame)
+    if parsed_req:
+        parts = [f"Flag:{parsed_req.flags:02X}", f"Cmd:{parsed_req.cmd:02X}"]
+        if parsed_req.uid:
+            uid_be = parsed_req.uid_be
+            if uid_be:
+                parts.append(f"UID:{uid_be.hex().upper()}")
+        if parsed_req.params:
+            parts.append(f"Params:{parsed_req.params.hex().upper()}")
+        if parsed_req.crc:
+            parts.append(f"CRC:{parsed_req.crc.hex().upper()}")
+        return " ".join(parts)
+    return None
+
+
+def _format_nfcv_listen(frame: NFCFrame) -> str:
+    """Format NFC-V Listen frame data section."""
+    parsed_resp = parse_nfcv_response(frame)
+    if parsed_resp:
+        parts = [f"Flag:{parsed_resp.flags:02X}"]
+        if parsed_resp.error_code is not None:
+            parts.append(
+                f"{Colors.RED}ERR:{parsed_resp.error_code:02X}{Colors.RESET}"
+            )
+        elif parsed_resp.payload is not None:
+            parts.append(f"Payload{_format_hex(parsed_resp.payload)}")
+        if parsed_resp.crc:
+            parts.append(f"CRC:{parsed_resp.crc.hex().upper()}")
+        return " ".join(parts)
+    return None
+
+
+# Dispatch table: tech -> (poll_formatter, listen_formatter)
+_FORMATTERS = {
+    "NfcA": (_format_nfca_poll, _format_nfca_listen),
+    "NfcB": (_format_nfcb_poll, _format_nfcb_listen),
+    "NfcF": (_format_nfcf_poll, _format_nfcf_listen),
+    "NfcV": (_format_nfcv_poll, _format_nfcv_listen),
+}
+
+
 def format_frame(frame: NFCFrame) -> str:
-    """Format a single frame for display"""
+    """Format a single NFC frame for terminal display."""
     tech_color = TECH_COLORS.get(frame.tech, Colors.RESET)
     type_color = TYPE_COLORS.get(frame.type, Colors.RESET)
 
     # Detect protocol command
     command = detect_command(frame)
 
-    # Build output with consistent column widths
+    # Header: [timestamp] tech rate type | command |
     output = f"[{Colors.BOLD}{frame.timestamp:>12.6f}{Colors.RESET}] "
     output += f"{tech_color}{frame.tech:>12}{Colors.RESET} "
 
-    # Rate column: 6 characters wide, always present
     rate_str = f"{frame.rate}" if frame.rate else ""
     output += f"{rate_str:>6} "
 
     output += f"{type_color}{frame.type:>10}{Colors.RESET} | "
 
-    # Command column: 16 characters wide, always present
+    # Command column: 16 characters wide
     command_str = f"{Colors.CYAN}{command}{Colors.RESET}" if command else ""
-    # Calculate padding for colored string
     visible_len = len(command) if command else 0
     padding = 16 - visible_len
     output += command_str + " " * padding + " | "
 
-    # Data formatting - unified for all protocols
-    hex_data = " ".join(f"{b:02X}" for b in frame.data) if frame.data else "(no data)"
+    # Data section — delegate to tech-specific formatter
+    data_str = None
+    if frame.data:
+        formatter_pair = _FORMATTERS.get(frame.tech)
+        if formatter_pair:
+            poll_fmt, listen_fmt = formatter_pair
+            if frame.is_poll():
+                data_str = poll_fmt(frame)
+            elif frame.is_listen():
+                data_str = listen_fmt(frame)
 
-    # Special formatting for NFC-A frames
-    if frame.tech == "NfcA" and frame.data:
-        if frame.is_poll():
-            parsed_req = parse_nfca_request(frame)
-            if parsed_req:
-                # Request: Cmd | [Params] | [CRC]
-                output += f"{frame.length:3}B | "
-                output += f"Cmd:{parsed_req.cmd:02X} "
-                if parsed_req.params:
-                    output += f"Params:{parsed_req.params.hex().upper()} "
-                if parsed_req.crc:
-                    output += f"CRC:{parsed_req.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-        else:
-            parsed_resp = parse_nfca_response(frame)
-            if parsed_resp:
-                # Response: [Payload] | [CRC]
-                output += f"{frame.length:3}B | "
-                if parsed_resp.payload is not None:
-                    payload_hex = parsed_resp.payload.hex().upper()
-                    if len(payload_hex) > 32:
-                        output += f"Payload[{len(parsed_resp.payload)}B]:{payload_hex[:32]}... "
-                    else:
-                        output += f"Payload:{payload_hex} "
-                if parsed_resp.crc:
-                    output += f"CRC:{parsed_resp.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-
-    # Special formatting for NFC-B frames
-    elif frame.tech == "NfcB" and frame.data:
-        if frame.is_poll():
-            parsed_req = parse_nfcb_request(frame)
-            if parsed_req:
-                # Request: Cmd | [Params] | [CRC]
-                output += f"{frame.length:3}B | "
-                output += f"Cmd:{parsed_req.cmd:02X} "
-                if parsed_req.params:
-                    output += f"Params:{parsed_req.params.hex().upper()} "
-                if parsed_req.crc:
-                    output += f"CRC:{parsed_req.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-        else:
-            parsed_resp = parse_nfcb_response(frame)
-            if parsed_resp:
-                # Response: [Payload] | [CRC]
-                output += f"{frame.length:3}B | "
-                if parsed_resp.payload is not None:
-                    payload_hex = parsed_resp.payload.hex().upper()
-                    if len(payload_hex) > 32:
-                        output += f"Payload[{len(parsed_resp.payload)}B]:{payload_hex[:32]}... "
-                    else:
-                        output += f"Payload:{payload_hex} "
-                if parsed_resp.crc:
-                    output += f"CRC:{parsed_resp.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-
-    # Special formatting for NFC-F frames
-    elif frame.tech == "NfcF" and frame.data:
-        if frame.is_poll():
-            parsed_req = parse_nfcf_request(frame)
-            if parsed_req:
-                # Request: L | Cmd | [Body]
-                output += f"{frame.length:3}B | "
-                if len(frame.data) > 0:
-                    output += f"L:{frame.data[0]:02X} "
-                output += f"Cmd:{parsed_req.cmd:02X} "
-                if parsed_req.body:
-                    body_hex = parsed_req.body.hex().upper()
-                    if len(body_hex) > 32:
-                        output += f"Body[{len(parsed_req.body)}B]:{body_hex[:32]}... "
-                    else:
-                        output += f"Body:{body_hex}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-        else:
-            parsed_resp = parse_nfcf_response(frame)
-            if parsed_resp:
-                # Response: L | Cmd | [Body]
-                output += f"{frame.length:3}B | "
-                if len(frame.data) > 0:
-                    output += f"L:{frame.data[0]:02X} "
-                output += f"Cmd:{parsed_resp.cmd:02X} "
-                if parsed_resp.body:
-                    body_hex = parsed_resp.body.hex().upper()
-                    if len(body_hex) > 32:
-                        output += f"Body[{len(parsed_resp.body)}B]:{body_hex[:32]}... "
-                    else:
-                        output += f"Body:{body_hex}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-
-    # Special formatting for NFC-V frames
-    elif frame.tech == "NfcV" and frame.data:
-        if frame.is_poll():
-            parsed_req = parse_nfcv_request(frame)
-            if parsed_req:
-                # Request: Flags | Cmd | [UID] | [Params] | CRC
-                output += f"{frame.length:3}B | "
-                output += f"Flag:{parsed_req.flags:02X} "
-                output += f"Cmd:{parsed_req.cmd:02X} "
-                if parsed_req.uid:
-                    uid_be = parsed_req.uid_be
-                    if uid_be:
-                        output += f"UID:{uid_be.hex().upper()} "
-                if parsed_req.params:
-                    output += f"Params:{parsed_req.params.hex().upper()} "
-                if parsed_req.crc:
-                    output += f"CRC:{parsed_req.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
-        else:
-            parsed_resp = parse_nfcv_response(frame)
-            if parsed_resp:
-                # Response: Flags | [ERR/Payload] | CRC
-                output += f"{frame.length:3}B | "
-                output += f"Flag:{parsed_resp.flags:02X} "
-                if parsed_resp.error_code is not None:
-                    output += (
-                        f"{Colors.RED}ERR:{parsed_resp.error_code:02X}{Colors.RESET} "
-                    )
-                elif parsed_resp.payload is not None:
-                    # Show length for long payloads
-                    payload_hex = parsed_resp.payload.hex().upper()
-                    if len(payload_hex) > 32:
-                        output += f"Payload[{len(parsed_resp.payload)}B]:{payload_hex[:32]}... "
-                    else:
-                        output += f"Payload:{payload_hex} "
-                if parsed_resp.crc:
-                    output += f"CRC:{parsed_resp.crc.hex().upper()}"
-            else:
-                output += f"{frame.length:3}B | {hex_data}"
+    if data_str is not None:
+        output += f"{frame.length:3}B | {data_str}"
     else:
-        # Standard formatting for other protocols
+        # Raw hex fallback
+        hex_data = " ".join(f"{b:02X}" for b in frame.data) if frame.data else "(no data)"
         output += f"{frame.length:3}B | {hex_data}"
 
+    # Error flags
     if frame.errors:
         output += f" {Colors.RED}[{', '.join(frame.errors)}]{Colors.RESET}"
 

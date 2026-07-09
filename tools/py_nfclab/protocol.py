@@ -14,7 +14,7 @@ cannot be reliably identified without context from previous Poll frames.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .models import NFCFrame
 
@@ -745,6 +745,863 @@ def parse_nfcv_request(frame: NFCFrame) -> Optional[NfcVRequest]:
     return NfcVRequest(flags=flags, cmd=cmd, uid=uid, params=params, crc=crc)
 
 
+# =============================================================================
+# ISO-DEP (ISO/IEC 14443-4) I-Block APDU Extraction
+# =============================================================================
+
+
+def is_isodep_chained(frame: NFCFrame) -> bool:
+    """
+    Check if an ISO-DEP I-Block frame has the chaining bit set.
+
+    When chaining is active (PCB bit 4 = 1), the frame contains a fragment
+    of a larger APDU — the last 2 bytes are CRC, not SW1/SW2.
+
+    ISO 14443-4 I-Block PCB: 0 0 0 C 0 0 N S
+      - Bit 7 (0x80) = 0 (I-Block identifier)
+      - Bit 4 (0x10) = Chaining
+      - Bit 0 (0x01) = Block number (sequence)
+
+    Returns True if the frame is a chained I-Block, False otherwise.
+    """
+    if frame.tech not in ("NfcA", "NfcB") or not frame.data or len(frame.data) < 6:
+        return False
+
+    pcb = frame.data[0]
+
+    # Must be an I-Block: bit 7 = 0, bits 6-5 must be 0 (not R/S-block)
+    if pcb & 0xE0:
+        return False
+
+    # Chaining bit: bit 4 (0x10)
+    return bool(pcb & 0x10)
+
+
+def extract_isodep_payload(frame: NFCFrame) -> Optional[bytes]:
+    """
+    Extract the APDU payload from an ISO-DEP I-Block frame.
+
+    Strips PCB, optional CID/NAD bytes, and trailing CRC to return
+    the raw APDU (C-APDU for Poll, R-APDU for Listen).
+
+    Returns None if the frame is not an I-Block, is chained, or too short.
+    Chained frames should be handled separately (use is_isodep_chained()).
+    """
+    if frame.tech not in ("NfcA", "NfcB") or not frame.data or len(frame.data) < 4:
+        return None
+
+    data = frame.data
+    pcb = data[0]
+
+    # I-Block: bit 7 = 0
+    if pcb & 0x80:
+        return None
+
+    # Chained frame — payload is incomplete, don't parse as APDU
+    if pcb & 0x10:
+        return None
+
+    offset = 1
+
+    # CID present: bit 3 of PCB (ISO 14443-4 §7.1)
+    if pcb & 0x08:
+        offset += 1
+
+    # NAD present: bit 2 of PCB
+    if pcb & 0x04:
+        offset += 1
+
+    # Payload is between header and CRC (last 2 bytes)
+    if len(data) < offset + 2:
+        return None
+
+    payload = data[offset:-2]
+    return payload if payload else None
+
+
+# =============================================================================
+# ISO 7816-4 APDU Parsing
+# =============================================================================
+
+# Well-known AIDs (Application Identifiers)
+KNOWN_AIDS = {
+    "325041592e5359532e4444463031": "2PAY.SYS.DDF01 (PPSE)",
+    "315041592e5359532e4444463031": "1PAY.SYS.DDF01 (PSE)",
+    "a0000000031010": "Visa Credit/Debit",
+    "a0000000032010": "Visa Electron",
+    "a0000000041010": "Mastercard Credit/Debit",
+    "a0000000042010": "Mastercard Maestro",
+    "a000000004101001": "Mastercard (US)",
+    "a000000025010104": "Amex",
+    "a000000025010701": "Amex (ExpressPay)",
+    "a0000000651010": "JCB",
+    "a0000003330101": "UnionPay Debit",
+    "a0000003241010": "Discover",
+    "a000000152": "Diners Club",
+    "a0000000780001": "Cubic (Clipper)",
+    "a0000007800003": "Cubic (Transit)",
+    "d2760000850101": "NDEF (NFC Forum)",
+}
+
+# ISO 7816-4 SELECT P1 values
+SELECT_P1 = {
+    0x00: "MF/EF/DF by ID",
+    0x01: "Child DF",
+    0x02: "EF under DF",
+    0x03: "Parent DF",
+    0x04: "DF by name (AID)",
+    0x08: "from MF",
+    0x09: "from current DF",
+}
+
+# ISO 7816-4 SELECT P2 values (file control info)
+SELECT_P2_FCI = {
+    0x00: "FCI",
+    0x04: "FCP",
+    0x08: "FMD",
+    0x0C: "No response",
+}
+
+# Common ISO 7816 status words
+STATUS_WORDS = {
+    0x9000: "OK",
+    0x6100: "More data available",
+    0x6200: "Warning (no info)",
+    0x6281: "Part of data corrupted",
+    0x6282: "End of file before Le",
+    0x6283: "Selected file deactivated",
+    0x6300: "Warning (state unchanged)",
+    0x6400: "Exec error (state unchanged)",
+    0x6500: "Exec error (memory changed)",
+    0x6700: "Wrong length",
+    0x6800: "Function not supported",
+    0x6881: "Logical channel not supported",
+    0x6882: "Secure messaging not supported",
+    0x6900: "Command not allowed",
+    0x6981: "Incompatible with file structure",
+    0x6982: "Security status not satisfied",
+    0x6983: "Auth method blocked",
+    0x6984: "Reference data not usable",
+    0x6985: "Conditions of use not satisfied",
+    0x6986: "Command not allowed (no EF)",
+    0x6A00: "Wrong params P1-P2",
+    0x6A80: "Incorrect data field params",
+    0x6A81: "Function not supported",
+    0x6A82: "File/application not found",
+    0x6A83: "Record not found",
+    0x6A84: "Not enough memory",
+    0x6A86: "Incorrect P1-P2",
+    0x6A88: "Referenced data not found",
+    0x6B00: "Wrong params (offset)",
+    0x6C00: "Wrong Le field",
+    0x6D00: "INS not supported",
+    0x6E00: "CLA not supported",
+    0x6F00: "No precise diagnosis",
+}
+
+# ISO 7816-4 INS codes (common subset)
+ISO7816_INS = {
+    0xA4: "SELECT",
+    0xB0: "READ BINARY",
+    0xB2: "READ RECORD",
+    0xD6: "UPDATE BINARY",
+    0xDC: "UPDATE RECORD",
+    0xCA: "GET DATA",
+    0xCB: "GET DATA (odd INS)",
+    0x20: "VERIFY",
+    0x24: "CHANGE PIN",
+    0x82: "EXTERNAL AUTHENTICATE",
+    0x84: "GET CHALLENGE",
+    0x88: "INTERNAL AUTHENTICATE",
+    0x70: "MANAGE CHANNEL",
+    0xC0: "GET RESPONSE",
+    0xA8: "GET PROCESSING OPTIONS",
+    0xAE: "GENERATE AC",
+}
+
+
+@dataclass
+class ApduCommand:
+    """Parsed ISO 7816-4 Command APDU (C-APDU)"""
+
+    cla: int
+    ins: int
+    p1: int
+    p2: int
+    lc: Optional[int] = None
+    data: Optional[bytes] = None
+    le: Optional[int] = None
+
+    @property
+    def ins_name(self) -> str:
+        """Human-readable INS name"""
+        return ISO7816_INS.get(self.ins, f"0x{self.ins:02X}")
+
+    @property
+    def is_select(self) -> bool:
+        return self.ins == 0xA4
+
+    @property
+    def is_read_record(self) -> bool:
+        return self.ins == 0xB2
+
+    @property
+    def is_get_processing_options(self) -> bool:
+        return self.ins == 0xA8
+
+
+@dataclass
+class ApduResponse:
+    """Parsed ISO 7816-4 Response APDU (R-APDU)"""
+
+    data: Optional[bytes] = None
+    sw1: int = 0
+    sw2: int = 0
+
+    @property
+    def sw(self) -> int:
+        """Combined status word"""
+        return (self.sw1 << 8) | self.sw2
+
+    @property
+    def sw_name(self) -> str:
+        """Human-readable status word"""
+        sw = self.sw
+        # Exact match
+        if sw in STATUS_WORDS:
+            return STATUS_WORDS[sw]
+        # SW1-only match (SW2 encodes extra info)
+        sw1_masked = sw & 0xFF00
+        if sw1_masked in STATUS_WORDS:
+            return f"{STATUS_WORDS[sw1_masked]} ({self.sw2})"
+        # 61XX: SW2 = remaining bytes
+        if self.sw1 == 0x61:
+            return f"OK, {self.sw2} bytes remaining"
+        # 6CXX: SW2 = correct Le
+        if self.sw1 == 0x6C:
+            return f"Wrong Le, use {self.sw2:02X}"
+        return f"0x{sw:04X}"
+
+    @property
+    def is_success(self) -> bool:
+        return self.sw1 == 0x90 and self.sw2 == 0x00
+
+    @property
+    def is_more_data(self) -> bool:
+        return self.sw1 == 0x61
+
+
+def parse_apdu_command(payload: bytes) -> Optional[ApduCommand]:
+    """
+    Parse a Command APDU (C-APDU) from raw bytes.
+
+    Supports Case 1-4 APDU structures per ISO 7816-4:
+      Case 1: CLA INS P1 P2                    (4 bytes)
+      Case 2: CLA INS P1 P2 Le                 (5 bytes)
+      Case 3: CLA INS P1 P2 Lc Data            (5+Lc bytes)
+      Case 4: CLA INS P1 P2 Lc Data Le         (6+Lc bytes)
+    """
+    if not payload or len(payload) < 4:
+        return None
+
+    cla = payload[0]
+    ins = payload[1]
+    p1 = payload[2]
+    p2 = payload[3]
+
+    if len(payload) == 4:
+        # Case 1: no Lc, no Le
+        return ApduCommand(cla=cla, ins=ins, p1=p1, p2=p2)
+
+    if len(payload) == 5:
+        # Case 2: Le only (no data)
+        le = payload[4]
+        if le == 0:
+            le = 256  # Le=0 means 256
+        return ApduCommand(cla=cla, ins=ins, p1=p1, p2=p2, le=le)
+
+    # Case 3 or 4: Lc + Data [+ Le]
+    lc = payload[4]
+    if lc == 0 and len(payload) > 7:
+        # Extended length Lc (3-byte): 00 + 2-byte Lc
+        lc = (payload[5] << 8) | payload[6]
+        data = payload[7 : 7 + lc] if lc > 0 else None
+        remainder = payload[7 + lc :]
+    else:
+        data = payload[5 : 5 + lc] if lc > 0 else None
+        remainder = payload[5 + lc :]
+
+    le = None
+    if remainder:
+        if len(remainder) == 1:
+            le = remainder[0]
+            if le == 0:
+                le = 256
+        elif len(remainder) == 2:
+            # Extended Le
+            le = (remainder[0] << 8) | remainder[1]
+            if le == 0:
+                le = 65536
+
+    return ApduCommand(cla=cla, ins=ins, p1=p1, p2=p2, lc=lc, data=data, le=le)
+
+
+def parse_apdu_response(payload: bytes) -> Optional[ApduResponse]:
+    """
+    Parse a Response APDU (R-APDU) from raw bytes.
+
+    Format: [Data] SW1 SW2
+    Minimum 2 bytes (SW1 + SW2 only).
+    """
+    if not payload or len(payload) < 2:
+        return None
+
+    sw1 = payload[-2]
+    sw2 = payload[-1]
+    data = payload[:-2] if len(payload) > 2 else None
+
+    return ApduResponse(data=data, sw1=sw1, sw2=sw2)
+
+
+# =============================================================================
+# SELECT APDU Decoding
+# =============================================================================
+
+
+@dataclass
+class SelectRequest:
+    """Decoded ISO 7816-4 SELECT command"""
+
+    apdu: ApduCommand
+    selection_type: str  # "by AID", "by ID", "MF", etc.
+    aid: Optional[bytes] = None
+    aid_name: Optional[str] = None  # Well-known AID name
+
+    def format_short(self) -> str:
+        """One-line summary for display"""
+        if self.aid_name:
+            return f"SELECT {self.aid_name}"
+        if self.aid:
+            return f"SELECT AID:{self.aid.hex().upper()}"
+        return f"SELECT {self.selection_type}"
+
+    def format_detail(self) -> str:
+        """Detailed breakdown"""
+        parts = [f"SELECT P1:{self.apdu.p1:02X}({self.selection_type})"]
+        p2_desc = SELECT_P2_FCI.get(self.apdu.p2 & 0x0C, f"0x{self.apdu.p2:02X}")
+        parts.append(f"P2:{self.apdu.p2:02X}({p2_desc})")
+        if self.aid:
+            parts.append(f"AID:{self.aid.hex().upper()}")
+            if self.aid_name:
+                parts.append(f"[{self.aid_name}]")
+        elif self.apdu.data:
+            parts.append(f"Data:{self.apdu.data.hex().upper()}")
+        if self.apdu.le is not None:
+            parts.append(f"Le:{self.apdu.le}")
+        return " ".join(parts)
+
+
+@dataclass
+class SelectResponse:
+    """Decoded ISO 7816-4 SELECT response"""
+
+    rapdu: ApduResponse
+    fci: Optional[Dict[str, Any]] = None  # Parsed FCI TLV fields
+    aid: Optional[bytes] = None  # DF name from FCI (tag 84)
+    app_label: Optional[str] = None  # Application label (tag 50)
+
+    def format_short(self) -> str:
+        """One-line summary for display"""
+        parts = []
+        if self.rapdu.is_success:
+            if self.app_label:
+                parts.append(f"OK [{self.app_label}]")
+            elif self.aid:
+                aid_hex = self.aid.hex().lower()
+                name = KNOWN_AIDS.get(aid_hex)
+                parts.append(f"OK AID:{self.aid.hex().upper()}")
+                if name:
+                    parts.append(f"[{name}]")
+            else:
+                parts.append("OK")
+            if self.rapdu.data:
+                parts.append(f"({len(self.rapdu.data)}B)")
+        else:
+            parts.append(f"SW:{self.rapdu.sw:04X} {self.rapdu.sw_name}")
+        return " ".join(parts)
+
+    def format_detail(self) -> str:
+        """Detailed breakdown"""
+        parts = [f"SW:{self.rapdu.sw:04X}({self.rapdu.sw_name})"]
+        if self.fci:
+            for tag_name, value in self.fci.items():
+                if isinstance(value, bytes):
+                    parts.append(f"{tag_name}:{value.hex().upper()}")
+                elif isinstance(value, str):
+                    parts.append(f"{tag_name}:{value}")
+                else:
+                    parts.append(f"{tag_name}:{value}")
+        elif self.rapdu.data:
+            parts.append(f"Data[{len(self.rapdu.data)}B]:{self.rapdu.data.hex().upper()}")
+        return " ".join(parts)
+
+
+# BER-TLV tag names for SELECT response (FCI template)
+FCI_TAGS = {
+    0x6F: "FCI",
+    0x84: "DF_Name",
+    0xA5: "FCI_Prop",
+    0x50: "AppLabel",
+    0x87: "Priority",
+    0x9F11: "IssuerCodeIdx",
+    0x9F12: "AppPrefName",
+    0xBF0C: "FCI_Issuer",
+    0x61: "AppTemplate",
+    0x4F: "AID",
+    0x88: "SFI",
+}
+
+
+def _parse_tlv_tag(data: bytes, offset: int) -> tuple[int, int]:
+    """Parse a BER-TLV tag. Returns (tag, new_offset)."""
+    if offset >= len(data):
+        return 0, offset
+    b = data[offset]
+    offset += 1
+    if (b & 0x1F) == 0x1F:
+        # Multi-byte tag
+        tag = b
+        while offset < len(data):
+            b2 = data[offset]
+            tag = (tag << 8) | b2
+            offset += 1
+            if not (b2 & 0x80):
+                break
+        return tag, offset
+    return b, offset
+
+
+def _parse_tlv_length(data: bytes, offset: int) -> tuple[int, int]:
+    """Parse a BER-TLV length. Returns (length, new_offset)."""
+    if offset >= len(data):
+        return 0, offset
+    b = data[offset]
+    offset += 1
+    if b <= 0x7F:
+        return b, offset
+    num_bytes = b & 0x7F
+    length = 0
+    for _ in range(num_bytes):
+        if offset >= len(data):
+            break
+        length = (length << 8) | data[offset]
+        offset += 1
+    return length, offset
+
+
+def _is_constructed(tag: int) -> bool:
+    """Check if a TLV tag is constructed (contains nested TLVs)."""
+    # Get the first byte of the tag
+    if tag > 0xFF:
+        first_byte = (tag >> 8) & 0xFF
+    else:
+        first_byte = tag
+    return bool(first_byte & 0x20)
+
+
+def parse_fci_tlv(data: bytes) -> Dict[str, Any]:
+    """
+    Parse FCI (File Control Information) from a SELECT response.
+
+    Performs a shallow recursive parse of BER-TLV to extract:
+    - DF Name (tag 84) — the AID
+    - Application Label (tag 50) — human-readable name
+    - Priority Indicator (tag 87)
+    - Nested constructed tags (6F, A5, BF0C, 61)
+
+    Returns a dict of tag_name -> value pairs.
+    """
+    result: Dict[str, Any] = {}
+    offset = 0
+
+    while offset < len(data):
+        tag, offset = _parse_tlv_tag(data, offset)
+        if tag == 0:
+            break
+        length, offset = _parse_tlv_length(data, offset)
+        if offset + length > len(data):
+            break
+
+        value = data[offset : offset + length]
+        offset += length
+
+        tag_name = FCI_TAGS.get(tag, f"Tag_{tag:02X}" if tag <= 0xFF else f"Tag_{tag:04X}")
+
+        if _is_constructed(tag):
+            # Recursively parse constructed tags
+            nested = parse_fci_tlv(value)
+            result.update(nested)
+        else:
+            # Primitive tags — decode based on type
+            if tag in (0x50, 0x9F12):
+                # Text fields (Application Label, App Preferred Name)
+                try:
+                    result[tag_name] = value.decode("ascii", errors="replace")
+                except UnicodeDecodeError:
+                    result[tag_name] = value
+            elif tag == 0x87:
+                # Priority indicator (single byte)
+                result[tag_name] = value[0] if value else 0
+            else:
+                result[tag_name] = value
+
+    return result
+
+
+def decode_select_request(frame: NFCFrame) -> Optional[SelectRequest]:
+    """
+    Decode a SELECT command from an ISO-DEP I-Block frame.
+
+    Returns SelectRequest if the frame contains a SELECT APDU, None otherwise.
+    """
+    payload = extract_isodep_payload(frame)
+    if not payload:
+        return None
+
+    apdu = parse_apdu_command(payload)
+    if not apdu or not apdu.is_select:
+        return None
+
+    # Determine selection type from P1
+    selection_type = SELECT_P1.get(apdu.p1, f"P1=0x{apdu.p1:02X}")
+
+    aid = None
+    aid_name = None
+
+    if apdu.p1 == 0x04 and apdu.data:
+        # Select by DF name (AID)
+        aid = apdu.data
+        aid_hex = aid.hex().lower()
+        aid_name = KNOWN_AIDS.get(aid_hex)
+        # Also try ASCII interpretation for PPSE-like names
+        if not aid_name:
+            try:
+                text = aid.decode("ascii")
+                if text.isprintable():
+                    aid_name = text
+            except (UnicodeDecodeError, ValueError):
+                pass
+    elif apdu.p1 == 0x00 and apdu.data:
+        # Select MF/EF/DF by file ID
+        selection_type = "by File ID"
+        if apdu.data == b'\x3F\x00':
+            selection_type = "MF"
+
+    return SelectRequest(
+        apdu=apdu,
+        selection_type=selection_type,
+        aid=aid,
+        aid_name=aid_name,
+    )
+
+
+def decode_select_response(frame: NFCFrame) -> Optional[SelectResponse]:
+    """
+    Decode a SELECT response from an ISO-DEP I-Block frame.
+
+    Returns SelectResponse if the frame contains a valid R-APDU, None otherwise.
+    Note: Without request context, this parses ANY R-APDU. The caller should
+    pair it with the preceding SELECT request.
+    """
+    payload = extract_isodep_payload(frame)
+    if not payload:
+        return None
+
+    rapdu = parse_apdu_response(payload)
+    if not rapdu:
+        return None
+
+    fci = None
+    aid = None
+    app_label = None
+
+    if rapdu.data and rapdu.is_success:
+        # Try to parse as FCI TLV
+        fci = parse_fci_tlv(rapdu.data)
+        if fci:
+            # Extract key fields
+            aid_val = fci.get("DF_Name") or fci.get("AID")
+            if isinstance(aid_val, bytes):
+                aid = aid_val
+            label_val = fci.get("AppLabel")
+            if isinstance(label_val, str):
+                app_label = label_val
+
+    return SelectResponse(
+        rapdu=rapdu,
+        fci=fci,
+        aid=aid,
+        app_label=app_label,
+    )
+
+
+# =============================================================================
+# GENERATE AC (EMV INS 0xAE) Decoding
+# =============================================================================
+
+# GENERATE AC P1: Reference Control Parameter
+GENERATE_AC_P1_TYPE = {
+    0x00: "AAC",    # Application Authentication Cryptogram (decline)
+    0x40: "TC",     # Transaction Certificate (approve offline)
+    0x80: "ARQC",   # Authorization Request Cryptogram (go online)
+}
+
+# Cryptogram Information Data (tag 9F27)
+CRYPTOGRAM_TYPE = {
+    0x00: "AAC",
+    0x40: "TC",
+    0x80: "ARQC",
+}
+
+
+@dataclass
+class GenerateACRequest:
+    """Decoded EMV GENERATE AC command"""
+
+    apdu: ApduCommand
+    cryptogram_requested: str  # "TC", "ARQC", "AAC"
+    cda_requested: bool  # Combined Data Authentication
+    cdol_data: Optional[bytes] = None  # CDOL data (transaction data)
+
+    def format_short(self) -> str:
+        """One-line summary"""
+        cda_str = "+CDA" if self.cda_requested else ""
+        return f"GENERATE AC ({self.cryptogram_requested}{cda_str})"
+
+    def format_detail(self) -> str:
+        """Detailed breakdown"""
+        parts = [f"GENERATE AC P1:{self.apdu.p1:02X}"]
+        cda_str = "+CDA" if self.cda_requested else ""
+        parts.append(f"({self.cryptogram_requested}{cda_str})")
+        if self.cdol_data:
+            parts.append(f"CDOL[{len(self.cdol_data)}B]:{self.cdol_data.hex().upper()}")
+        return " ".join(parts)
+
+
+@dataclass
+class GenerateACResponse:
+    """Decoded EMV GENERATE AC response"""
+
+    rapdu: ApduResponse
+    cryptogram_type: Optional[str] = None  # "TC", "ARQC", "AAC"
+    atc: Optional[bytes] = None  # Application Transaction Counter (9F36)
+    cryptogram: Optional[bytes] = None  # Application Cryptogram (9F26)
+    issuer_app_data: Optional[bytes] = None  # Issuer Application Data (9F10)
+    cid: Optional[int] = None  # Cryptogram Information Data (9F27)
+    signed_data: Optional[bytes] = None  # Signed Dynamic Application Data (9F4B)
+    tlv_fields: Optional[Dict[str, Any]] = None  # All parsed TLV fields
+
+    def format_short(self) -> str:
+        """One-line summary"""
+        if not self.rapdu.is_success:
+            return f"SW:{self.rapdu.sw:04X} {self.rapdu.sw_name}"
+        parts = ["OK"]
+        if self.cryptogram_type:
+            parts.append(f"({self.cryptogram_type})")
+        if self.cryptogram:
+            parts.append(f"AC:{self.cryptogram.hex().upper()}")
+        if self.atc:
+            parts.append(f"ATC:{self.atc.hex().upper()}")
+        return " ".join(parts)
+
+    def format_detail(self) -> str:
+        """Detailed breakdown"""
+        parts = [f"SW:{self.rapdu.sw:04X}({self.rapdu.sw_name})"]
+        if self.cid is not None:
+            ctype = CRYPTOGRAM_TYPE.get(self.cid & 0xC0, f"0x{self.cid:02X}")
+            parts.append(f"CID:{self.cid:02X}({ctype})")
+        if self.atc:
+            # ATC as integer for readability
+            atc_val = int.from_bytes(self.atc, "big")
+            parts.append(f"ATC:{atc_val}")
+        if self.cryptogram:
+            parts.append(f"AC:{self.cryptogram.hex().upper()}")
+        if self.issuer_app_data:
+            if len(self.issuer_app_data) > 16:
+                parts.append(f"IAD[{len(self.issuer_app_data)}B]:{self.issuer_app_data[:16].hex().upper()}...")
+            else:
+                parts.append(f"IAD:{self.issuer_app_data.hex().upper()}")
+        if self.signed_data:
+            parts.append(f"SDAD[{len(self.signed_data)}B]")
+        # Show any extra TLV fields not already displayed
+        if self.tlv_fields:
+            shown_tags = {"Tag_9F27", "Tag_9F36", "Tag_9F26", "Tag_9F10", "Tag_9F4B"}
+            for tag_name, value in self.tlv_fields.items():
+                if tag_name not in shown_tags:
+                    if isinstance(value, bytes):
+                        if len(value) > 8:
+                            parts.append(f"{tag_name}[{len(value)}B]")
+                        else:
+                            parts.append(f"{tag_name}:{value.hex().upper()}")
+                    else:
+                        parts.append(f"{tag_name}:{value}")
+        return " ".join(parts)
+
+
+# EMV-specific TLV tags for GENERATE AC response
+EMV_AC_TAGS = {
+    0x9F27: "Tag_9F27",  # Cryptogram Information Data
+    0x9F36: "Tag_9F36",  # Application Transaction Counter
+    0x9F26: "Tag_9F26",  # Application Cryptogram
+    0x9F10: "Tag_9F10",  # Issuer Application Data
+    0x9F4B: "Tag_9F4B",  # Signed Dynamic Application Data
+    0x9F6C: "Tag_9F6C",  # Mag Stripe Application Version Number
+    0x9F6E: "Tag_9F6E",  # Form Factor Indicator
+    0xDF8101: "Tag_DF8101",
+    0xDF8102: "Tag_DF8102",
+    0xDF8104: "Tag_DF8104",
+    0xDF8105: "Tag_DF8105",
+}
+
+
+def _parse_emv_tlv(data: bytes) -> Dict[str, Any]:
+    """Parse TLV data from a GENERATE AC response (EMV format 2)."""
+    result: Dict[str, Any] = {}
+    offset = 0
+
+    while offset < len(data):
+        tag, offset = _parse_tlv_tag(data, offset)
+        if tag == 0 or offset >= len(data):
+            break
+        length, offset = _parse_tlv_length(data, offset)
+        if offset + length > len(data):
+            break
+        value = data[offset:offset + length]
+        offset += length
+
+        # Use known name or generate one
+        if tag in EMV_AC_TAGS:
+            tag_name = EMV_AC_TAGS[tag]
+        elif tag in FCI_TAGS:
+            tag_name = FCI_TAGS[tag]
+        elif tag <= 0xFF:
+            tag_name = f"Tag_{tag:02X}"
+        elif tag <= 0xFFFF:
+            tag_name = f"Tag_{tag:04X}"
+        else:
+            tag_name = f"Tag_{tag:06X}"
+
+        result[tag_name] = value
+
+    return result
+
+
+def decode_generate_ac_request(frame: NFCFrame) -> Optional[GenerateACRequest]:
+    """
+    Decode a GENERATE AC command from an ISO-DEP I-Block frame.
+
+    Returns GenerateACRequest if the frame contains a GENERATE AC APDU.
+    """
+    payload = extract_isodep_payload(frame)
+    if not payload:
+        return None
+
+    apdu = parse_apdu_command(payload)
+    if not apdu or apdu.ins != 0xAE:
+        return None
+
+    # P1 bits 7-6: cryptogram type requested
+    # Bit 4: CDA requested
+    p1_type = apdu.p1 & 0xC0
+    cryptogram_requested = GENERATE_AC_P1_TYPE.get(p1_type, f"Unknown(0x{p1_type:02X})")
+    cda_requested = bool(apdu.p1 & 0x10)
+
+    return GenerateACRequest(
+        apdu=apdu,
+        cryptogram_requested=cryptogram_requested,
+        cda_requested=cda_requested,
+        cdol_data=apdu.data,
+    )
+
+
+def decode_generate_ac_response(frame: NFCFrame) -> Optional[GenerateACResponse]:
+    """
+    Decode a GENERATE AC response from an ISO-DEP I-Block frame.
+
+    EMV responses use either Format 1 (tag 80) or Format 2 (tag 77) TLV.
+    """
+    payload = extract_isodep_payload(frame)
+    if not payload:
+        return None
+
+    rapdu = parse_apdu_response(payload)
+    if not rapdu:
+        return None
+
+    cryptogram_type = None
+    atc = None
+    cryptogram = None
+    issuer_app_data = None
+    cid = None
+    signed_data = None
+    tlv_fields = None
+
+    if rapdu.data and rapdu.is_success:
+        data = rapdu.data
+
+        # Check for Format 1 (tag 80) or Format 2 (tag 77)
+        if len(data) >= 2:
+            if data[0] == 0x80:
+                # Format 1: fixed layout CID(1) + ATC(2) + AC(8) + IAD(var)
+                _, off = _parse_tlv_length(data, 1)
+                inner = data[off:]
+                if len(inner) >= 11:
+                    cid = inner[0]
+                    cryptogram_type = CRYPTOGRAM_TYPE.get(cid & 0xC0, f"0x{cid:02X}")
+                    atc = inner[1:3]
+                    cryptogram = inner[3:11]
+                    if len(inner) > 11:
+                        issuer_app_data = inner[11:]
+            elif data[0] == 0x77:
+                # Format 2: constructed TLV
+                _, off = _parse_tlv_length(data, 1)
+                inner = data[off:]
+                tlv_fields = _parse_emv_tlv(inner)
+
+                # Extract known fields
+                cid_val = tlv_fields.get("Tag_9F27")
+                if isinstance(cid_val, bytes) and len(cid_val) >= 1:
+                    cid = cid_val[0]
+                    cryptogram_type = CRYPTOGRAM_TYPE.get(cid & 0xC0, f"0x{cid:02X}")
+                atc_val = tlv_fields.get("Tag_9F36")
+                if isinstance(atc_val, bytes):
+                    atc = atc_val
+                ac_val = tlv_fields.get("Tag_9F26")
+                if isinstance(ac_val, bytes):
+                    cryptogram = ac_val
+                iad_val = tlv_fields.get("Tag_9F10")
+                if isinstance(iad_val, bytes):
+                    issuer_app_data = iad_val
+                sdad_val = tlv_fields.get("Tag_9F4B")
+                if isinstance(sdad_val, bytes):
+                    signed_data = sdad_val
+            else:
+                # Try generic TLV parse
+                tlv_fields = _parse_emv_tlv(data)
+
+    return GenerateACResponse(
+        rapdu=rapdu,
+        cryptogram_type=cryptogram_type,
+        atc=atc,
+        cryptogram=cryptogram,
+        issuer_app_data=issuer_app_data,
+        cid=cid,
+        signed_data=signed_data,
+        tlv_fields=tlv_fields,
+    )
+
+
+
 def detect_command(frame: NFCFrame) -> Optional[str]:
     """
     Detect protocol command name from frame data.
@@ -875,8 +1732,16 @@ def detect_command(frame: NFCFrame) -> Optional[str]:
         if (pcb & 0xE6) == 0xB2:
             return "R(NACK)"
 
-        # I-Block: bit 7 = 0
+        # I-Block: bit 7 = 0 — try to identify the APDU command
         if (pcb & ISO_DEP_I_BLOCK_MASK) == 0x00:
+            # Check chaining bit — if set, this is a fragment
+            if pcb & 0x10:
+                return "I-Block(chained)"
+            apdu_payload = extract_isodep_payload(frame)
+            if apdu_payload and frame.is_poll() and len(apdu_payload) >= 4:
+                apdu = parse_apdu_command(apdu_payload)
+                if apdu:
+                    return apdu.ins_name
             return "I-Block"
 
     return result
