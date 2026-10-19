@@ -23,10 +23,41 @@ or as JSON (JSONL) compatible with `nfc-lab --json-frames`.
 - **Runs until stopped.** By default it captures until Ctrl+C. Use `-t SECONDS`
   for a bounded capture.
 - **Silent by default.** With no `-l`, there is no logging at all — only frames.
+- **Airspy + SpyVerter rig needs `-b -f 133560000`.** On the local setup (an
+  Airspy fed through a SpyVerter up-converter) these two options are
+  **essential** — without them the capture is empty. See
+  [Hardware: Airspy + SpyVerter](#hardware-airspy--spyverter) below.
 
 If the user asks to "decode a capture file," that is a job for the companion
 `nfc-decode` skill / `nfcdecode.py`, not `nfc-rx`. This skill is for acquiring
 new captures from hardware.
+
+## Hardware: Airspy + SpyVerter
+
+When the SDR is an **Airspy paired with a SpyVerter up-converter** (the local
+rig), two options are **essential** for any capture — omit them and you get an
+empty capture (only carrier events or nothing):
+
+- `-b` (`--bias-tee`) — powers the SpyVerter over the antenna line. Without
+  bias-tee the up-converter is unpowered and no signal reaches the Airspy.
+- `-f 133560000` — the NFC carrier (13.56 MHz) shifted up by the SpyVerter's
+  120 MHz local oscillator (13.56 MHz + 120 MHz = 133.56 MHz). This is the
+  frequency the Airspy must actually tune to.
+
+Recommended (less critical) gain settings for this rig:
+
+- `-g 1` (`--gain-mode`) and `-G 5` (`--gain-value`) — a good default gain
+  point. Adjust `-G` up or down if frames are noisy or missing, but the capture
+  will still work without these.
+
+So a capture on this hardware looks like:
+
+```powershell
+& "<nfc-rx>" -b -f 133560000 -g 1 -G 5 -j -p nfca,nfcb -t 30 > "C:\path\to\capture.jsonl"
+```
+
+On a different SDR (bare Airspy, RTL-SDR, HackRF, etc.) drop `-b` and the
+`133560000` frequency and let the device defaults apply.
 
 ## Locating or building the binary
 
@@ -108,7 +139,9 @@ On Linux/macOS just run `<nfc-rx>` directly once built.
 
 There is no config file and no positional argument. Frequency/sample-rate/gain
 default to sensible per-device values (Airspy, RTL-SDR, Miri, etc.); only
-override them when you have a reason to.
+override them when you have a reason to. **Exception:** on the Airspy +
+SpyVerter rig, `-b` and `-f 133560000` are always required — see
+[Hardware: Airspy + SpyVerter](#hardware-airspy--spyverter).
 
 ## Output formats
 
@@ -146,10 +179,11 @@ Live text view with INFO logging (frames on stdout, logs on stderr):
 $env:MSYSTEM = "UCRT64"; & C:\msys64\usr\bin\bash.exe -lc "<nfc-rx> -l INFO"
 ```
 
-Specific SDR tuning (example: Airspy at 40.68 MHz / 10 MS/s):
+Local rig (Airspy + SpyVerter) — `-b -f 133560000` are essential, gain is
+recommended (see [Hardware: Airspy + SpyVerter](#hardware-airspy--spyverter)):
 
 ```powershell
-$env:MSYSTEM = "UCRT64"; & C:\msys64\usr\bin\bash.exe -lc "<nfc-rx> -f 40680000 -s 10000000 -j -t 30 > /c/path/to/capture.jsonl"
+$env:MSYSTEM = "UCRT64"; & C:\msys64\usr\bin\bash.exe -lc "<nfc-rx> -b -f 133560000 -g 1 -G 5 -j -p nfca,nfcb -t 30 > /c/path/to/capture.jsonl"
 ```
 
 ## Running it as an agent

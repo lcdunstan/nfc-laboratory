@@ -16,3 +16,7 @@ CLAUDE.md
 
 # Kiro local, machine-specific steering (hardcoded local paths)
 .kiro/steering/local-build-env.md
+
+# Local NFC capture / decode artifacts (JSONL traces, decoded text dumps)
+/data/
+*.code-workspace
